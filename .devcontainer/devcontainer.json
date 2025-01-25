@@ -4,6 +4,7 @@
 	"name": "Python 3",
 	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
 	"image": "mcr.microsoft.com/devcontainers/python:0-3.11",
+	"postCreateCommand": "sudo apt-get update && sudo apt-get install -y build-essential python3-dev",
 	"features": {
 		"ghcr.io/guiyomh/features/vim:0": {},
 		"ghcr.io/devcontainers-contrib/features/poetry:2": {
