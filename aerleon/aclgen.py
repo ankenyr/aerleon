@@ -145,6 +145,7 @@ def RenderFile(
     shade_check: bool,
     write_files: WriteList,
     queue: Queue = None,
+    log_level: int = logging.DEBUG,
 ):
     """Render a single file.
 
@@ -159,9 +160,10 @@ def RenderFile(
       shade_check: should we raise an error if a term is completely shaded
       write_files: a list of file tuples, (output_file, acl_text), to write
       queue: Queue used to send logs back when in multiprocessing.
+      log_level: level the queued logs are filtered at, matching the parent.
     """
     if queue:
-        logging.config.dictConfig(aerleon_logger.get_worker_config(queue))
+        logging.config.dictConfig(aerleon_logger.get_worker_config(queue, log_level))
 
     output_relative = input_file.relative_to(base_directory).parent.parent
     output_directory = output_directory / output_relative
@@ -411,6 +413,24 @@ def _WriteFile(output_file: pathlib.Path, file_contents: str):
         raise
 
 
+def _ListenerProcess(queue: Queue, stop_event, log_level: int):
+    """Emit log records produced by the renderer subprocesses.
+
+    Must stay at module level: the spawn start method pickles the target.
+
+    Args:
+      queue: Queue the renderer subprocesses send their log records on.
+      stop_event: Event set by the parent once every renderer has finished.
+      log_level: level the records are filtered at, matching the parent.
+    """
+    logging.config.dictConfig(aerleon_logger.get_root_config(log_level))
+    listener = logging.handlers.QueueListener(queue, *logging.getLogger().handlers)
+    listener.start()
+    stop_event.wait()
+    # stop() drains whatever is still queued; simply returning would drop it.
+    listener.stop()
+
+
 def Run(
     base_directory: str,
     definitions_directory: str,
@@ -444,8 +464,8 @@ def Run(
         definitions = naming.Naming(definitions_directory)
     except naming.NoDefinitionsError:
         err_msg = 'bad definitions directory: %s' % definitions_directory
-        logging.fatal(err_msg)
-        return  # static type analyzer can't detect that logging.fatal exits program
+        logging.critical(err_msg)
+        sys.exit(1)
 
     # thead-safe list for storing files to write
     manager: multiprocessing.managers.SyncManager = context.Manager()
@@ -476,6 +496,7 @@ def Run(
     else:
         # render all files in parallel
         q = multiprocessing.Manager().Queue()
+        log_level = logging.getLogger().getEffectiveLevel()
         policies = DescendDirectory(base_directory, ignore_directories)
         pool = context.Pool(processes=max_renderers)
         results: List[multiprocessing.pool.AsyncResult] = []
@@ -493,28 +514,12 @@ def Run(
                         shade_check,
                         write_files,
                         q,
+                        log_level,
                     ),
                 )
             )
         stop_event = Event()
-
-        def listener_process(q, stop_event):
-            config_listener = {
-                'version': 1,
-                'handlers': {
-                    'console': {
-                        'class': 'logging.StreamHandler',
-                        'level': 'INFO',
-                    },
-                },
-                'root': {'handlers': ['console'], 'level': 'DEBUG'},
-            }
-            logging.config.dictConfig(config_listener)
-            listener = logging.handlers.QueueListener(q, aerleon_logger.LogHandler())
-            listener.start()
-            stop_event.wait()
-
-        lp = Process(target=listener_process, name='listener', args=(q, stop_event))
+        lp = Process(target=_ListenerProcess, name='listener', args=(q, stop_event, log_level))
         lp.start()
         pool.close()
         pool.join()

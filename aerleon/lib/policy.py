@@ -2012,6 +2012,8 @@ class AerleonLexxer(object):
         self.lexer = lex.lex(module=self, **kwargs)
 
     def input(self, data):
+        # The lexer is reused across parses; input() does not reset lineno.
+        self.lexer.lineno = 1
         self.lexer.input(data)
 
     def token(self):
@@ -2023,7 +2025,9 @@ class AerleonParser(object):
 
     def __init__(self, lexer):
         self.lexer = lexer
-        self.parser = yacc.yacc(module=self, debug=False, write_tables=False)
+        self.parser = yacc.yacc(
+            module=self, debug=False, write_tables=False, errorlog=yacc.NullLogger()
+        )
 
     def parse(self, data):
         self.lexer.input(data)
@@ -2568,12 +2572,12 @@ class AerleonParser(object):
             use_token = repr(next_token.value)
 
         if p:
-            raise SyntaxError(
+            raise ParseError(
                 ' ERROR on "%s" (type %s, line %d, Next %s)'
                 % (p.value, p.type, p.lineno, use_token)
             )
         else:
-            raise SyntaxError(' ERROR you likely have unablanaced "{"\'s')
+            raise ParseError(' ERROR you likely have unablanaced "{"\'s')
 
 
 # pylint: enable=unused-argument,invalid-name,g-short-docstring-punctuation
@@ -2581,6 +2585,22 @@ class AerleonParser(object):
 # pylint: enable=g-space-before-docstring-summary,g-doc-args
 # pylint: enable=g-no-space-after-docstring-summary
 # pylint: enable=g-docstring-missing-newline
+
+_PARSER = None
+
+
+def _GetParser() -> AerleonParser:
+    """Return the process-wide parser, building it on first use.
+
+    Building AerleonParser generates the LALR tables and the lexer master
+    regex, which is far too expensive to repeat once per policy file.
+    """
+    global _PARSER
+    if _PARSER is None:
+        lexx = AerleonLexxer()
+        lexx.build()
+        _PARSER = AerleonParser(lexx)
+    return _PARSER
 
 
 def _ReadFile(filename):
@@ -2713,11 +2733,7 @@ def ParsePolicy(
         globals()['_OPTIMIZE'] = optimize
         globals()['_SHADE_CHECK'] = shade_check
         preprocessed_data = '\n'.join(_Preprocess(data, base_dir=base_dir))
-        lexx = AerleonLexxer()
-        lexx.build()
-        parser = AerleonParser(lexx)
-
-        policy = parser.parse(preprocessed_data)
+        policy = _GetParser().parse(preprocessed_data)
         policy.filename = filename
         return policy
 

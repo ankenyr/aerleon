@@ -7,18 +7,16 @@ LOG_FORMAT = (
 DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
 
 
-def get_worker_config(queue):
+def get_worker_config(queue, log_level):
     return {
         'version': 1,
-        'formatters': {'default': {'format': LOG_FORMAT, 'datefmt': DATE_FORMAT}},
         'handlers': {
             'queue': {
                 'class': 'logging.handlers.QueueHandler',
                 'queue': queue,
-                'formatter': 'default',
             }
         },
-        'root': {'handlers': ['queue'], 'level': 'DEBUG'},
+        'root': {'handlers': ['queue'], 'level': log_level},
     }
 
 
@@ -40,7 +38,9 @@ def get_root_config(log_level):
 
 
 class LogHandler(logging.StreamHandler):
-    cache = set([])
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.cache = set()
 
     def emit(self, record):
         if record.name == "root":
@@ -52,9 +52,7 @@ class LogHandler(logging.StreamHandler):
             record.processName = '%s (for %s)' % (current_process().name, record.processName)
             emit_once = getattr(record, "emit_once", False)
             if emit_once:
-                msg_to_check = (
-                    record.msg.split(']', 1)[1] if ']' in record.msg else record.msg
-                )  # Handle cases without ']'
+                msg_to_check = record.getMessage()
                 if msg_to_check in self.cache:
                     return
                 else:
