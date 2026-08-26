@@ -122,6 +122,10 @@ options:
                         Destination port.
   --sport SOURCE_PORT, --source-port SOURCE_PORT, --source_port SOURCE_PORT
                         Source port.
+  --source-zone, --source_zone SOURCE_ZONE
+                        Source security/zone identifier. When provided, `AclCheck` will only match terms that either have no `source-zone` constraint or explicitly match this zone. Use the exact zone name as used in your policy (case-sensitive).
+  --destination-zone, --destination_zone DESTINATION_ZONE
+                        Destination security/zone identifier. When provided, `AclCheck` will only match terms that either have no `destination-zone` constraint or explicitly match this zone. Use the exact zone name as used in your policy (case-sensitive).
 ```
 
 
@@ -168,7 +172,7 @@ Usage: pol2yaml [--base_directory DIRECTORY] [-c|--config_file FILE] [--definiti
 Examples:
 
 * Recursively convert all .pol and .inc files in base_directory.
-  Original files are left in place. Each YAML files is placed in the same
+  Original files are left in place. Each YAML file is placed in the same
   directory as the original file. Run sanity_check after (-s).
 
     npx pol2yaml -s --base_directory policies/

@@ -20,7 +20,6 @@ import logging
 
 # pylint: disable=g-importing-member
 from string import Template
-from typing import Dict, List, Set, Tuple, Union
 
 from aerleon.lib import aclgenerator, windows
 from aerleon.lib.nacaddr import IPv4, IPv6
@@ -78,8 +77,8 @@ class Term(windows.Term):
     }
 
     def _HandleIcmpTypes(
-        self, icmp_types: List[str], protocols: List[str]
-    ) -> Tuple[List[str], List[str]]:
+        self, icmp_types: list[str], protocols: list[str]
+    ) -> tuple[list[str], list[str]]:
         if icmp_types:
             raise aclgenerator.UnsupportedFilterError(
                 '\n%s %s %s %s'
@@ -88,24 +87,24 @@ class Term(windows.Term):
         return ([''], protocols)
 
     def _HandlePorts(
-        self, src_ports: List[Tuple[int, int]], dst_ports: List[Tuple[int, int]]
-    ) -> Tuple[List[str], List[str]]:
+        self, src_ports: list[tuple[int, int]], dst_ports: list[tuple[int, int]]
+    ) -> tuple[list[str], list[str]]:
         # ports = Map the ports in a straight list since multiports aren't supported
         return (self._CollapsePortTuples(src_ports), self._CollapsePortTuples(dst_ports))
 
-    def _HandlePreRule(self, ret_str: List[str]) -> None:
+    def _HandlePreRule(self, ret_str: list[str]) -> None:
         ret_str.append(self._ComposeFilterList())
         ret_str.append(self._ComposeFilterAction(self._ACTION_TABLE[self.term.action[0]]))
 
     def _CartesianProduct(
         self,
-        src_addr: List[Union[IPv4, IPv6]],
-        dst_addr: List[Union[IPv4, IPv6]],
-        protocol: List[str],
-        unused_icmp_types: List[str],
-        src_port: List[str],
-        dst_port: List[str],
-        ret_str: List[str],
+        src_addr: list[IPv4 | IPv6],
+        dst_addr: list[IPv4 | IPv6],
+        protocol: list[str],
+        unused_icmp_types: list[str],
+        src_port: list[str],
+        dst_port: list[str],
+        ret_str: list[str],
     ) -> None:
         for saddr in src_addr:
             if saddr.version != 4:
@@ -142,7 +141,7 @@ class Term(windows.Term):
                                 )
                             )
 
-    def _CollapsePortTuples(self, port_tuples: Tuple[int, int]) -> List[Union[str, int]]:
+    def _CollapsePortTuples(self, port_tuples: tuple[int, int]) -> list[str | int]:
         ports = ['']
         for tpl in port_tuples:
             if tpl:
@@ -162,8 +161,8 @@ class Term(windows.Term):
 
     def _ComposeFilter(
         self,
-        srcaddr: Union[IPv4, IPv6],
-        dstaddr: Union[IPv4, IPv6],
+        srcaddr: IPv4 | IPv6,
+        dstaddr: IPv4 | IPv6,
         proto: str,
         srcmask: int,
         dstmask: int,
@@ -199,7 +198,7 @@ class Term(windows.Term):
 
     def ComposeRule(self, policy: str):
         return self.CMD_PREFIX + self._RULE_FORMAT.substitute(
-            name=self.term_name + '-rule',
+            name=f"{self.term_name}-rule",
             policy=policy,
             filterlist=self.term_name + self._LIST_SUFFIX,
             filteraction=self.term_name + self._ACTION_SUFFIX,
@@ -217,7 +216,7 @@ class WindowsIPSec(windows.WindowsGenerator):
 
     _GOOD_AFS = ['inet']
 
-    def _BuildTokens(self) -> Tuple[Set[str], Dict[str, Set[str]]]:
+    def _BuildTokens(self) -> tuple[set[str], dict[str, set[str]]]:
         """Build supported tokens for platform.
 
         Returns:
@@ -229,9 +228,9 @@ class WindowsIPSec(windows.WindowsGenerator):
         del supported_sub_tokens['icmp_type']
         return supported_tokens, supported_sub_tokens
 
-    def _HandlePolicyHeader(self, header: Header, target: List[str]) -> None:
+    def _HandlePolicyHeader(self, header: Header, target: list[str]) -> None:
         policy_name = header.FilterName(self._PLATFORM) + self._POLICY_SUFFIX
-        target.append(Term.CMD_PREFIX + self._POLICY_FORMAT.substitute(name=policy_name) + '\n')
+        target.append(f"{Term.CMD_PREFIX}{self._POLICY_FORMAT.substitute(name=policy_name)}\n")
 
-    def _HandleTermFooter(self, header: Header, term: Term, target: List[str]):
-        target.append(term.ComposeRule(header.FilterName(self._PLATFORM)) + '\n')
+    def _HandleTermFooter(self, header: Header, term: Term, target: list[str]):
+        target.append(f"{term.ComposeRule(header.FilterName(self._PLATFORM))}\n")

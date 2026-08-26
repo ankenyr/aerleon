@@ -1,17 +1,25 @@
 """YAML front-end. Loads a Policy model from a .yaml file."""
 
+import copy
 import logging
 import pathlib
-from typing import Dict, List, Optional, Tuple, Union
-from unittest.mock import MagicMock
+import typing
 
 import yaml
 from yaml.error import YAMLError
 
 from aerleon.lib import policy
 from aerleon.lib.policy import BadIncludePath, Policy, _SubpathOf
-from aerleon.lib.policy_builder import PolicyBuilder, PolicyDict
+from aerleon.lib.policy_builder import (
+    PolicyBuilder,
+    PolicyDict,
+    PolicyFilterTermsOnly,
+)
 from aerleon.lib.yaml_loader import SpanSafeYamlLoader
+
+if typing.TYPE_CHECKING:
+    from aerleon.lib.naming import Naming
+
 
 MAX_INCLUDE_DEPTH = 5
 
@@ -44,10 +52,17 @@ class UserMessage:
 
     message: str
     filename: str
-    line: int
-    include_chain: "list[Tuple[str, int]]"
+    line: int | None
+    include_chain: "list[tuple[str, int]] | None"
 
-    def __init__(self, message: str, *, filename, line=None, include_chain=None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        filename: str,
+        line: int | None = None,
+        include_chain: "list[tuple[str, int]] | None" = None,
+    ) -> None:
         self.message = message
         self.filename = filename
         self.line = line
@@ -81,8 +96,15 @@ class UserMessage:
     def __repr__(self):
         return f"UserMessage(\"{str(self)}\")"
 
+    @classmethod
+    def fromValueError(cls, error: ValueError, *, filename, line=None, include_chain=None):
+        """Create a UserMessage from a ValueError."""
+        return cls(str(error), filename=filename, line=line, include_chain=include_chain)
 
-def ParseFile(filename, base_dir='', definitions=None, optimize=False, shade_check=False):
+
+def ParseFile(
+    filename, base_dir='', definitions: 'Naming | None' = None, optimize=False, shade_check=False
+):
     """Load a policy yaml file and return a Policy data model.
 
     Args:
@@ -96,14 +118,15 @@ def ParseFile(filename, base_dir='', definitions=None, optimize=False, shade_che
     Raises:
         PolicyTypeError: The policy file provided is not valid.
     """
-    with open(pathlib.Path(base_dir).joinpath(filename), 'r') as file:
+    with open(pathlib.Path(base_dir).joinpath(filename)) as file:
         try:
             policy_dict = yaml.load(file, Loader=SpanSafeYamlLoader(filename=filename))
         except YAMLError as yaml_error:
             raise PolicyTypeError(
                 UserMessage("Unable to read file as YAML.", filename=filename)
             ) from yaml_error
-    policy_dict = _preprocessYAMLPolicy(filename, base_dir, policy_dict)
+    processor = YAMLPolicyPreprocessor(base_dir)
+    policy_dict = processor(filename, policy_dict)
     if not policy_dict:
         return
     if not policy_dict['filters']:
@@ -112,8 +135,14 @@ def ParseFile(filename, base_dir='', definitions=None, optimize=False, shade_che
 
 
 def ParsePolicy(
-    file: str, *, filename, base_dir='', definitions=None, optimize=False, shade_check=False
-) -> Optional[Union[MagicMock, Policy]]:
+    file: str,
+    *,
+    filename,
+    base_dir='',
+    definitions: 'Naming | None' = None,
+    optimize=False,
+    shade_check=False,
+) -> Policy | None:
     """Load a policy yaml file (provided as a string) and return a Policy data model.
 
     Note that "filename" must still be provided. The input filename is used to
@@ -137,7 +166,8 @@ def ParsePolicy(
             UserMessage("Unable to read file as YAML.", filename=filename)
         ) from yaml_error
 
-    policy_dict = _preprocessYAMLPolicy(filename, base_dir, policy_dict)
+    processor = YAMLPolicyPreprocessor(base_dir)
+    policy_dict = processor(filename, policy_dict)
     if not policy_dict:
         return
     if not policy_dict['filters']:
@@ -149,261 +179,322 @@ def suffix_is_yaml(filename):
     return filename[-5:] == '.yaml' or filename[-4:] == '.yml'
 
 
-def _preprocessYAMLPolicy(
-    filename: str, base_dir: str, policy_dict: Optional[PolicyDict]
-) -> Optional[Dict[str, List[Dict[str, Union[Dict[str, Dict[str, str]], List[Dict[str, str]]]]]]]:
-    """Process includes and validate the file data as a PolicyDict."""
-    debug_stack = []
-    return _preprocessYAMLPolicyInner(
-        MAX_INCLUDE_DEPTH,
-        debug_stack,
-        filename=filename,
-        base_dir=base_dir,
-        policy_dict=policy_dict,
-    )
+class YAMLPolicyPreprocessor:
+    """Processes a policy dictionary, handling includes and performing validation."""
 
+    def __init__(self, base_dir: str):
+        """
+        Args:
+            base_dir: The base directory for resolving include paths.
+        """
+        self.base_dir = base_dir
 
-def _preprocessYAMLPolicyInner(
-    depth: int, debug_stack: list, filename: str, base_dir: str, policy_dict: Optional[PolicyDict]
-) -> Optional[Dict[str, List[Dict[str, Union[Dict[str, Dict[str, str]], List[Dict[str, str]]]]]]]:
-    # Empty files are ignored with a warning
-    if policy_dict is None or not policy_dict:
-        logging.warning(UserMessage("Ignoring empty policy file.", filename=filename))
-        return
+    def __call__(self, filename: str, policy_dict: PolicyDict | None) -> PolicyDict | None:
+        """Process includes and validate the file data as a PolicyDict.
 
-    # Malformed policy files should generate a PolicyTypeError (unless this is an include file)
-    if 'filters' in policy_dict and isinstance(policy_dict['filters'], list):
-        pass  # Normal case.
-    elif (
-        depth < MAX_INCLUDE_DEPTH
-        and 'filters_include_only' in policy_dict
-        and isinstance(policy_dict['filters_include_only'], list)
-    ):
-        # Policy files with filters_include_only: are ignored by ParsePolicy but can be included.
-        policy_dict['filters'] = policy_dict['filters_include_only']
-        del policy_dict['filters_include_only']
-    elif 'terms' in policy_dict or 'filters_include_only' in policy_dict:
-        # We are looking at an include file outside of an include and should quietly ignore it.
-        return
-    else:
-        raise PolicyTypeError(
-            UserMessage("Policy file must contain one or more filter sections.", filename=filename)
+        Args:
+            filename: The name of the policy file.
+            policy_dict: The parsed YAML policy data.
+
+        Returns:
+            The processed policy dictionary with includes expanded.
+        """
+        debug_stack = []
+        return self._preprocess_inner(
+            MAX_INCLUDE_DEPTH,
+            debug_stack,
+            filename=filename,
+            policy_dict=policy_dict,
         )
 
-    found_filters = []
+    def _preprocess_inner(
+        self, depth: int, debug_stack: list, filename: str, policy_dict: PolicyDict | None
+    ) -> PolicyDict | None:
+        # Empty files are ignored with a warning
+        if policy_dict is None or not policy_dict:
+            logging.warning(UserMessage("Ignoring empty policy file.", filename=filename))
+            return
 
-    for filter in policy_dict['filters']:
-        # Malformed filters should generate a PolicyTypeError
-        if not isinstance(filter, dict):
-            raise PolicyTypeError(UserMessage("Filter must be a mapping.", filename=filename))
-
-        def expand_filter(filter):
-            stack = debug_stack.copy()
-            stack.append((filter['__filename__'], filter['__line__']))
-
-            if depth <= 0:
-                raise ExcessiveRecursionError(
-                    UserMessage(
-                        f"Excessive recursion: include depth limit of {MAX_INCLUDE_DEPTH} reached.",  # noqa: E501
-                        filename=filter['__filename__'],
-                        line=filter['__line__'],
-                        include_chain=stack,
-                    )
-                )
-            if not suffix_is_yaml(filter['include']):
-                raise PolicyTypeError(
-                    UserMessage(
-                        f"Policy include source {filter['include']} must end in \".yaml\".",  # noqa: E501
-                        filename=filter['__filename__'],
-                        line=filter['__line__'],
-                        include_chain=stack,
-                    )
-                )
-            include_path = pathlib.Path(base_dir).joinpath(filter['include'])
-            if not _SubpathOf(base_dir, include_path):
-                raise BadIncludePath(
-                    f"Include file cannot be loaded from outside the base directory. File={include_path} base_directory={base_dir}"
-                )
-            try:
-                include_file = _LoadIncludeFile(include_path)
-                include_data = yaml.load(
-                    include_file, Loader=SpanSafeYamlLoader(filename=str(include_path))
-                )
-            except YAMLError as yaml_error:
-                raise PolicyTypeError(
-                    UserMessage(
-                        "Unable to read file as YAML.",
-                        filename=str(include_path),
-                        include_chain=stack,
-                    )
-                ) from yaml_error
-            data = _preprocessYAMLPolicyInner(
-                depth - 1,
-                stack,
-                filename=include_path.name,
-                base_dir=base_dir,
-                policy_dict=include_data,
-            )
-            if not (data and data['filters']):
-                logging.warning(
-                    UserMessage(
-                        "Ignoring empty policy include source.",
-                        filename=str(include_path),
-                        include_chain=stack,
-                    )
-                )
-                return
-            found_filters.extend(data['filters'])
-
-        if 'include' in filter:
-            # This is an include directive
-            expand_filter(filter)
-            continue
-
-        if 'header' not in filter or not isinstance(filter['header'], dict):
-            raise PolicyTypeError(
-                UserMessage(
-                    "Filter must contain a header section.",
-                    filename=filename,
-                    line=filter['__line__'],
-                )
-            )
-
-        if 'terms' not in filter or not filter['terms'] or not isinstance(filter['terms'], list):
-            raise PolicyTypeError(
-                UserMessage(
-                    "Filter must contain a terms section.",
-                    filename=filename,
-                    line=filter['__line__'],
-                )
-            )
-
-        header = filter['header']
-        if 'targets' not in header or (
-            header['targets'] is not None and not isinstance(header['targets'], dict)
+        # Malformed policy files should generate a PolicyTypeError (unless this is an include file)
+        if 'filters' in policy_dict and isinstance(policy_dict['filters'], list):
+            pass  # Normal case.
+        elif (
+            depth < MAX_INCLUDE_DEPTH
+            and 'filters_include_only' in policy_dict
+            and isinstance(policy_dict['filters_include_only'], list)
         ):
+            # Policy files with filters_include_only: are ignored by ParsePolicy but can be included.
+            policy_dict['filters'] = policy_dict['filters_include_only']
+            del policy_dict['filters_include_only']
+        elif 'terms' in policy_dict or 'filters_include_only' in policy_dict:
+            # We are looking at an include file outside of an include and should quietly ignore it.
+            return
+        else:
             raise PolicyTypeError(
                 UserMessage(
-                    "Filter header must contain a targets section.",
-                    filename=filename,
-                    line=header['__line__'],
+                    "Policy file must contain one or more filter sections.", filename=filename
                 )
             )
 
-        # Filters with an empty target list can be ignored with a warning
-        elif not header['targets']:
-            raise PolicyTypeError(
-                UserMessage(
-                    "Filter header cannot be empty.",
-                    filename=filename,
-                    line=filter['__line__'],
-                )
-            )
+        found_filters = []
 
-        found_terms = []
+        for filter_item in policy_dict['filters']:
+            # Malformed filters should generate a PolicyTypeError
+            if not isinstance(filter_item, dict):
+                raise PolicyTypeError(UserMessage("Filter must be a mapping.", filename=filename))
 
-        def process_terms(depth, stack, term_items):
-            for term_item in term_items:
-                if 'include' not in term_item:
-                    found_terms.append(term_item)
-                    continue
-                new_stack = stack.copy()
-                new_stack.append((term_item['__filename__'], term_item['__line__']))
+            def expand_filter(filter_to_expand):
+                stack = debug_stack.copy()
+                stack.append((filter_to_expand['__filename__'], filter_to_expand['__line__']))
+
                 if depth <= 0:
                     raise ExcessiveRecursionError(
                         UserMessage(
                             f"Excessive recursion: include depth limit of {MAX_INCLUDE_DEPTH} reached.",  # noqa: E501
-                            filename=term_item['__filename__'],
-                            line=term_item['__line__'],
-                            include_chain=new_stack,
+                            filename=filter_to_expand['__filename__'],
+                            line=filter_to_expand['__line__'],
+                            include_chain=stack,
                         )
                     )
-                if not suffix_is_yaml(term_item['include']):
-                    raise PolicyTypeError(
-                        UserMessage(
-                            f"Policy include source {term_item['include']} must end in \".yaml\".",  # noqa: E501
-                            filename=term_item['__filename__'],
-                            line=term_item['__line__'],
-                            include_chain=new_stack,
-                        )
-                    )
-                # process_include(depth - 1, new_stack, term_item['include'])
-                include_path = pathlib.Path(base_dir).joinpath(term_item['include'])
-                if not _SubpathOf(base_dir, include_path):
-                    raise BadIncludePath(
-                        f"Include file cannot be loaded from outside the base directory. File={include_path} base_directory={base_dir}"
-                    )
-
                 try:
-                    include_file = _LoadIncludeFile(include_path)
-                    include_data = yaml.load(
-                        include_file, Loader=SpanSafeYamlLoader(filename=str(include_path))
+                    include_data, include_path = self._load_include_file(
+                        filter_to_expand['include'], stack
                     )
+                except ValueError as value_error:
+                    raise PolicyTypeError(
+                        UserMessage.fromValueError(
+                            value_error,
+                            filename=filter_to_expand['__filename__'],
+                            line=filter_to_expand['__line__'],
+                            include_chain=stack,
+                        )
+                    ) from value_error
                 except YAMLError as yaml_error:
                     raise PolicyTypeError(
                         UserMessage(
                             "Unable to read file as YAML.",
-                            filename=str(include_path),
-                            include_chain=new_stack,
+                            filename=str(
+                                pathlib.Path(self.base_dir).joinpath(filter_to_expand['include'])
+                            ),
+                            include_chain=stack,
                         )
                     ) from yaml_error
-                if not include_data or 'terms' not in include_data or not include_data['terms']:
+
+                data = self._preprocess_inner(
+                    depth - 1,
+                    stack,
+                    filename=include_path.name,
+                    policy_dict=include_data,
+                )
+                if not (data and data['filters']):
                     logging.warning(
                         UserMessage(
                             "Ignoring empty policy include source.",
                             filename=str(include_path),
-                            include_chain=new_stack,
+                            include_chain=stack,
                         )
                     )
-                    continue
-                process_terms(depth - 1, new_stack, include_data['terms'])
+                    return
+                found_filters.extend(data['filters'])
 
-        process_terms(MAX_INCLUDE_DEPTH, [], filter['terms'])
+            if 'include' in filter_item:
+                # This is an include directive
+                expand_filter(filter_item)
+                continue
 
-        if not found_terms:
-            logging.warning(
-                UserMessage(
-                    "Ignoring filter with zero terms.",
-                    filename=filename,
-                    line=filter['__line__'],
-                )
-            )
-            continue
-
-        for term_item in found_terms:
-            if 'name' not in term_item or len(term_item['name'].strip()) == 0:
+            if 'header' not in filter_item or not isinstance(filter_item['header'], dict):
                 raise PolicyTypeError(
                     UserMessage(
-                        "Term must have a name.",
-                        filename=term_item['__filename__'],
-                        line=term_item['__line__'],
+                        "Filter must contain a header section.",
+                        filename=filename,
+                        line=filter_item['__line__'],
                     )
                 )
 
-        filter['terms'] = found_terms
-        found_filters.append(filter)
+            if (
+                'terms' not in filter_item
+                or not filter_item['terms']
+                or not isinstance(filter_item['terms'], list)
+            ):
+                raise PolicyTypeError(
+                    UserMessage(
+                        "Filter must contain a terms section.",
+                        filename=filename,
+                        line=filter_item['__line__'],
+                    )
+                )
 
-    policy_dict['filters'] = found_filters
+            header = filter_item['header']
+            if 'targets' not in header or (
+                header['targets'] is not None and not isinstance(header['targets'], dict)
+            ):
+                raise PolicyTypeError(
+                    UserMessage(
+                        "Filter header must contain a targets section.",
+                        filename=filename,
+                        line=header['__line__'],
+                    )
+                )
 
-    def StripDebuggingData(data):
-        if isinstance(data, list):
-            for item in data:
-                if isinstance(item, list) or isinstance(item, dict):
-                    StripDebuggingData(item)
-        elif isinstance(data, dict):
-            data.pop('__line__', None)
-            data.pop('__filename__', None)
-            for item in data.values():
-                if isinstance(item, list) or isinstance(item, dict):
-                    StripDebuggingData(item)
+            # Filters with an empty target list can be ignored with a warning
+            elif not header['targets']:
+                raise PolicyTypeError(
+                    UserMessage(
+                        "Filter header cannot be empty.",
+                        filename=filename,
+                        line=filter_item['__line__'],
+                    )
+                )
 
-    StripDebuggingData(policy_dict)
+            found_terms = []
 
-    return policy_dict
+            def process_terms(term_depth, stack, term_items):
+                for term_item in term_items:
+                    if 'include' not in term_item:
+                        found_terms.append(term_item)
+                        continue
+                    new_stack = stack.copy()
+                    new_stack.append((term_item['__filename__'], term_item['__line__']))
+                    if term_depth <= 0:
+                        raise ExcessiveRecursionError(
+                            UserMessage(
+                                f"Excessive recursion: include depth limit of {MAX_INCLUDE_DEPTH} reached.",  # noqa: E501
+                                filename=term_item['__filename__'],
+                                line=term_item['__line__'],
+                                include_chain=new_stack,
+                            )
+                        )
+                    try:
+                        include_data, include_path = self._load_include_file(
+                            term_item['include'], new_stack
+                        )
+                    except ValueError as value_error:
+                        raise PolicyTypeError(
+                            UserMessage.fromValueError(
+                                value_error,
+                                filename=term_item['__filename__'],
+                                line=term_item['__line__'],
+                                include_chain=new_stack,
+                            )
+                        ) from value_error
+                    except YAMLError as yaml_error:
+                        raise PolicyTypeError(
+                            UserMessage(
+                                "Unable to read file as YAML.",
+                                filename=str(
+                                    pathlib.Path(self.base_dir).joinpath(term_item['include'])
+                                ),
+                                include_chain=new_stack,
+                            )
+                        ) from yaml_error
+                    if (
+                        not include_data
+                        or 'terms' not in include_data
+                        or not include_data['terms']
+                    ):
+                        logging.warning(
+                            UserMessage(
+                                "Ignoring empty policy include source.",
+                                filename=str(include_path),
+                                include_chain=new_stack,
+                            )
+                        )
+                        continue
+                    process_terms(term_depth - 1, new_stack, include_data['terms'])
+
+            process_terms(MAX_INCLUDE_DEPTH, [], filter_item['terms'])
+
+            if not found_terms:
+                logging.warning(
+                    UserMessage(
+                        "Ignoring filter with zero terms.",
+                        filename=filename,
+                        line=filter_item['__line__'],
+                    )
+                )
+                continue
+
+            for term_item in found_terms:
+                if 'name' not in term_item or len(term_item['name'].strip()) == 0:
+                    raise PolicyTypeError(
+                        UserMessage(
+                            "Term must have a name.",
+                            filename=term_item['__filename__'],
+                            line=term_item['__line__'],
+                        )
+                    )
+
+            filter_item['terms'] = found_terms
+            found_filters.append(filter_item)
+
+        policy_dict['filters'] = found_filters
+
+        def StripDebuggingData(data):
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, list) or isinstance(item, dict):
+                        StripDebuggingData(item)
+            elif isinstance(data, dict):
+                data.pop('__line__', None)
+                data.pop('__filename__', None)
+                for item in data.values():
+                    if isinstance(item, list) or isinstance(item, dict):
+                        StripDebuggingData(item)
+
+        StripDebuggingData(policy_dict)
+
+        return policy_dict
+
+    def _load_include_file(
+        self, relative_path: str, stack: list
+    ) -> tuple[PolicyDict | None, str | pathlib.Path]:
+        """Load, parse, and validate an include file path."""
+        if not suffix_is_yaml(relative_path):
+            raise ValueError(
+                f'Policy include source {relative_path} must end in ".yaml" or ".yml".'
+            )
+        include_path = pathlib.Path(self.base_dir).joinpath(relative_path)
+        if not _SubpathOf(self.base_dir, include_path):
+            raise BadIncludePath(
+                f"Include file cannot be loaded from outside the base directory. File={include_path} base_directory={self.base_dir}"
+            )
+
+        with open(include_path) as include_file:
+            include_data = yaml.load(
+                include_file.read(), Loader=SpanSafeYamlLoader(filename=str(include_path))
+            )
+        return include_data, include_path
 
 
-def _LoadIncludeFile(include_path: pathlib.PosixPath) -> str:
-    """Open an include file."""
+class GenerateAPIPolicyPreprocessor(YAMLPolicyPreprocessor):
+    """A YAMLPolicyPreprocessor that sources includes from a dictionary."""
 
-    with open(include_path, 'r') as include_file:
-        return include_file.read()
+    def __init__(self, includes: dict[str, PolicyFilterTermsOnly]):
+        """
+        Args:
+            includes: A read-only mapping from include name to file_dict.
+        """
+        super().__init__('')
+        self.includes = includes
+
+    def _load_include_file(
+        self, relative_path: str, stack: list
+    ) -> tuple[PolicyFilterTermsOnly | None, str | pathlib.Path]:
+        """Override to load includes from the self.includes dictionary."""
+        include_data = self.includes.get(relative_path)
+        if not include_data:
+            return None, relative_path
+
+        def _add_debug_info(data, filename):
+            if isinstance(data, dict):
+                data['__filename__'] = filename
+                data['__line__'] = 1
+                for value in data.values():
+                    _add_debug_info(value, filename)
+            elif isinstance(data, list):
+                for item in data:
+                    _add_debug_info(item, filename)
+
+        include_data_copy = copy.deepcopy(include_data)
+        _add_debug_info(include_data_copy, relative_path)
+        return include_data_copy, relative_path

@@ -272,7 +272,7 @@ class Nsxt(aclgenerator.ACLGenerator):
     _DEFAULT_PROTOCOL = 'ip'
     SUFFIX = '.nsxt'
 
-    _OPTIONAL_SUPPORTED_KEYWORDS = set(['expiration', 'logging'])
+    _OPTIONAL_SUPPORTED_KEYWORDS = {'expiration', 'logging'}
     _FILTER_OPTIONS_DICT = {}
 
     def _TranslatePolicy(self, pol, exp_info):
@@ -296,7 +296,7 @@ class Nsxt(aclgenerator.ACLGenerator):
             for term in terms:
                 # Check for duplicate terms
                 if term.name in term_names:
-                    raise NsxtDuplicateTermError('There are multiple terms named: %s' % term.name)
+                    raise NsxtDuplicateTermError(f'There are multiple terms named: {term.name}')
                 term_names.add(term.name)
 
                 term.name = self.FixTermLength(term.name)
@@ -359,7 +359,7 @@ class Nsxt(aclgenerator.ACLGenerator):
                         break
                     else:
                         raise UnsupportedNsxtAccessListError(
-                            'Security Group Id is not provided for %s' % (self._PLATFORM)
+                            f'Security Group Id is not provided for {self._PLATFORM}'
                         )
 
         self._FILTER_OPTIONS_DICT['section_name'] = section_name

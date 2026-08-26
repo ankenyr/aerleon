@@ -16,7 +16,6 @@
 """Juniper MS-MPC  generator for Aerleon."""
 
 import logging
-from typing import Dict, List, Set, Tuple
 
 from aerleon.lib import aclgenerator, juniper, nacaddr, policy
 
@@ -94,12 +93,12 @@ class Term(juniper.Term):
         # all comment processing.
         if not self.noverbose:
             if self.term.owner:
-                self.term.comment.append('Owner: %s' % self.term.owner)
+                self.term.comment.append(f'Owner: {self.term.owner}')
             if self.term.comment:
                 ret_str.Append('/*')
                 for comment in self.term.comment:
                     for line in comment.split('\n'):
-                        ret_str.Append('** ' + line)
+                        ret_str.Append(f"** {line}")
                 ret_str.Append('*/')
 
         # Term verbatim output - this will skip over normal term creation
@@ -229,7 +228,7 @@ class Term(juniper.Term):
 
             ret_str.Append(
                 '%s term %s%s {'
-                % (term_prefix, self.term.name, '-' + suffix if duplicate_term else '')
+                % (term_prefix, self.term.name, f"-{suffix}" if duplicate_term else '')
             )
 
             # We only need a "from {" clause if there are any conditions to match.
@@ -241,31 +240,31 @@ class Term(juniper.Term):
                     if source_address:
                         for saddr in source_address:
                             for comment in self._Comment(saddr):
-                                ret_str.Append('%s' % comment)
+                                ret_str.Append(f'{comment}')
                             if saddr.version == 6 and 0 < saddr.prefixlen < 16:
                                 for saddr2 in saddr.subnets(new_prefix=16):
-                                    ret_str.Append('%s;' % saddr2)
+                                    ret_str.Append(f'{saddr2};')
                             else:
                                 if saddr == nacaddr.IPv6('0::0/0'):
                                     saddr = 'any-ipv6'
                                 elif saddr == nacaddr.IPv4('0.0.0.0/0'):
                                     saddr = 'any-ipv4'
-                                ret_str.Append('%s;' % saddr)
+                                ret_str.Append(f'{saddr};')
 
                     # SOURCE ADDRESS EXCLUDE
                     if source_address_exclude:
                         for ex in source_address_exclude:
                             for comment in self._Comment(ex):
-                                ret_str.Append('%s' % comment)
+                                ret_str.Append(f'{comment}')
                             if ex.version == 6 and 0 < ex.prefixlen < 16:
                                 for ex2 in ex.subnets(new_prefix=16):
-                                    ret_str.Append('%s except;' % ex2)
+                                    ret_str.Append(f'{ex2} except;')
                             else:
                                 if ex == nacaddr.IPv6('0::0/0'):
                                     ex = 'any-ipv6'
                                 elif ex == nacaddr.IPv4('0.0.0.0/0'):
                                     ex = 'any-ipv4'
-                                ret_str.Append('%s except;' % ex)
+                                ret_str.Append(f'{ex} except;')
                     ret_str.Append('}')  # source-address {...}
 
                 # DESTINATION ADDRESS
@@ -274,46 +273,46 @@ class Term(juniper.Term):
                     if destination_address:
                         for daddr in destination_address:
                             for comment in self._Comment(daddr):
-                                ret_str.Append('%s' % comment)
+                                ret_str.Append(f'{comment}')
                             if daddr.version == 6 and 0 < daddr.prefixlen < 16:
                                 for daddr2 in daddr.subnets(new_prefix=16):
-                                    ret_str.Append('%s;' % daddr2)
+                                    ret_str.Append(f'{daddr2};')
                             else:
                                 if daddr == nacaddr.IPv6('0::0/0'):
                                     daddr = 'any-ipv6'
                                 elif daddr == nacaddr.IPv4('0.0.0.0/0'):
                                     daddr = 'any-ipv4'
-                                ret_str.Append('%s;' % daddr)
+                                ret_str.Append(f'{daddr};')
 
                     # DESTINATION ADDRESS EXCLUDE
                     if destination_address_exclude:
                         for ex in destination_address_exclude:
                             for comment in self._Comment(ex):
-                                ret_str.Append('%s' % comment)
+                                ret_str.Append(f'{comment}')
                             if ex.version == 6 and 0 < ex.prefixlen < 16:
                                 for ex2 in ex.subnets(new_prefix=16):
-                                    ret_str.Append('%s except;' % ex2)
+                                    ret_str.Append(f'{ex2} except;')
                             else:
                                 if ex == nacaddr.IPv6('0::0/0'):
                                     ex = 'any-ipv6'
                                 elif ex == nacaddr.IPv4('0.0.0.0/0'):
                                     ex = 'any-ipv4'
-                                ret_str.Append('%s except;' % ex)
+                                ret_str.Append(f'{ex} except;')
                     ret_str.Append('}')  # destination-address {...}
 
                 # source prefix <except> list
                 if self.term.source_prefix or self.term.source_prefix_except:
                     for pfx in self.term.source_prefix:
-                        ret_str.Append('source-prefix-list ' + pfx + ';')
+                        ret_str.Append(f"source-prefix-list {pfx};")
                     for epfx in self.term.source_prefix_except:
-                        ret_str.Append('source-prefix-list ' + epfx + ' except;')
+                        ret_str.Append(f"source-prefix-list {epfx} except;")
 
                 # destination prefix <except> list
                 if self.term.destination_prefix or self.term.destination_prefix_except:
                     for pfx in self.term.destination_prefix:
-                        ret_str.Append('destination-prefix-list ' + pfx + ';')
+                        ret_str.Append(f"destination-prefix-list {pfx};")
                     for epfx in self.term.destination_prefix_except:
-                        ret_str.Append('destination-prefix-list ' + epfx + ' except;')
+                        ret_str.Append(f"destination-prefix-list {epfx} except;")
 
                 # APPLICATION
                 if (
@@ -324,7 +323,7 @@ class Term(juniper.Term):
                 ):
                     if hasattr(self.term, 'replacement_application_name'):
                         ret_str.Append(
-                            'application-sets ' + self.term.replacement_application_name + '-app;'
+                            f"application-sets {self.term.replacement_application_name}-app;"
                         )
                     else:
                         ret_str.Append(
@@ -338,7 +337,7 @@ class Term(juniper.Term):
             ret_str.Append('then {')
             # ACTION
             for action in self.term.action:
-                ret_str.Append(self._ACTIONS.get(str(action)) + ';')
+                ret_str.Append(f"{self._ACTIONS.get(str(action))};")
             if self.term.logging and 'disable' not in [x.value for x in self.term.logging]:
                 ret_str.Append('syslog;')
             ret_str.Append('}')  # then {...}
@@ -377,7 +376,7 @@ class JuniperMSMPC(aclgenerator.ACLGenerator):
         self.applications = {}
         super().__init__(pol, exp_info)
 
-    def _BuildTokens(self) -> Tuple[Set[str], Dict[str, Set[str]]]:
+    def _BuildTokens(self) -> tuple[set[str], dict[str, set[str]]]:
         """Build supported tokens for platform.
 
         Returns:
@@ -407,7 +406,7 @@ class JuniperMSMPC(aclgenerator.ACLGenerator):
         )
         return supported_tokens, supported_sub_tokens
 
-    def _BuildPort(self, ports: List[Tuple[int, int]]):
+    def _BuildPort(self, ports: list[tuple[int, int]]):
         """Transform specified ports into list and ranges.
 
         Args:
@@ -421,7 +420,7 @@ class JuniperMSMPC(aclgenerator.ACLGenerator):
             if p[0] == p[1]:
                 port_list.append(str(p[0]))
             else:
-                port_list.append('%s-%s' % (str(p[0]), str(p[1])))
+                port_list.append(f'{str(p[0])}-{str(p[1])}')
         return port_list
 
     def _GenerateApplications(self, filter_name: str):
@@ -442,53 +441,49 @@ class JuniperMSMPC(aclgenerator.ACLGenerator):
                     else:
                         timeout = 60
                     num_terms = len(app['protocol']) * len(app['icmp-type'])
-                    apps_set_list.append('application-set ' + app['name'] + '-app {')
+                    apps_set_list.append(f"application-set {app['name']}-app {{")
                     for i in range(num_terms):
-                        apps_set_list.append(
-                            'application ' + app['name'] + '-app%d' % (i + 1) + ';'
-                        )
+                        apps_set_list.append(f"application {app['name']}{'-app%d' % (i + 1)};")
                     apps_set_list.append('}')  # application-set {...}
 
                     term_counter = 0
                     for i, code in enumerate(app['icmp-type']):
                         for proto in app['protocol']:
                             target.append(
-                                'application ' + app['name'] + '-app%d' % (term_counter + 1) + ' {'
+                                f"application {app['name']}{'-app%d' % (term_counter + 1)} {{"
                             )
                             if proto == 'icmp':
-                                target.append('application-protocol %s;' % proto)
-                            target.append('protocol %s;' % proto)
-                            target.append('%s-type %s;' % (proto, str(code)))
+                                target.append(f'application-protocol {proto};')
+                            target.append(f'protocol {proto};')
+                            target.append(f'{proto}-type {str(code)};')
                             if app['icmp-code']:
-                                target.append(
-                                    '%s-code %s;' % (proto, self._Group(app['icmp-code']))
-                                )
+                                target.append(f"{proto}-code {self._Group(app['icmp-code'])};")
                             if int(timeout):
-                                target.append('inactivity-timeout %s;' % int(timeout))
+                                target.append(f'inactivity-timeout {int(timeout)};')
                             target.append('}')  # application {...}
                             term_counter += 1
                 # generate non-ICMP statements
                 else:
                     i = 1
-                    apps_set_list.append('application-set ' + app['name'] + '-app {')
+                    apps_set_list.append(f"application-set {app['name']}-app {{")
 
                     for proto in app['protocol'] or ['']:
                         for sport in app['sport'] or ['']:
                             for dport in app['dport'] or ['']:
                                 chunks = []
                                 if proto:
-                                    chunks.append('protocol %s;' % proto)
+                                    chunks.append(f'protocol {proto};')
                                 if sport and ('udp' in proto or 'tcp' in proto):
-                                    chunks.append('source-port %s;' % sport)
+                                    chunks.append(f'source-port {sport};')
                                 if dport and ('udp' in proto or 'tcp' in proto):
-                                    chunks.append('destination-port %s;' % dport)
+                                    chunks.append(f'destination-port {dport};')
                                 if app['timeout']:
-                                    chunks.append(' inactivity-timeout %d;' % int(app['timeout']))
+                                    chunks.append(f" inactivity-timeout {int(app['timeout'])};")
                                 if chunks:
                                     apps_set_list.append(
-                                        'application ' + app['name'] + '-app%d;' % i
+                                        f"application {app['name']}{'-app%d;' % i}"
                                     )
-                                    app_list.append('application ' + app['name'] + '-app%d {' % i)
+                                    app_list.append(f"application {app['name']}{'-app%d {' % i}")
                                     for chunk in chunks:
                                         app_list.append(chunk)
                                     app_list.append('}')
@@ -581,7 +576,7 @@ class JuniperMSMPC(aclgenerator.ACLGenerator):
                         term.name,
                     )
                     continue
-                if set(['established', 'tcp-established']).intersection(term.option):
+                if {'established', 'tcp-established'}.intersection(term.option):
                     logging.warning(
                         'Skipping established term %s because MSMPC is stateful.', term.name
                     )
@@ -642,7 +637,7 @@ class JuniperMSMPC(aclgenerator.ACLGenerator):
                         and new_application_set != application_set
                     ):
                         raise ConflictingApplicationSetsError(
-                            'Application set %s has a conflicting entry' % modified_term_name
+                            f'Application set {modified_term_name} has a conflicting entry'
                         )
 
                 if new_application_set:
@@ -653,7 +648,7 @@ class JuniperMSMPC(aclgenerator.ACLGenerator):
                 (header, filter_name, filter_direction, new_terms, apply_groups)
             )
 
-    def _Group(self, group: List[str], lc: bool = True):
+    def _Group(self, group: list[str], lc: bool = True):
         """If 1 item return it, else return [ item1 item2 ].
 
         Args:
@@ -666,7 +661,7 @@ class JuniperMSMPC(aclgenerator.ACLGenerator):
                 or with just ';' appended if len(group) == 1
         """
 
-        def _FormattedGroup(el: List[str], lc: bool = True):
+        def _FormattedGroup(el: list[str], lc: bool = True):
             """Return the actual formatting of an individual element.
 
             Args:
@@ -691,9 +686,9 @@ class JuniperMSMPC(aclgenerator.ACLGenerator):
                 return '%d-%d' % (el[0], el[1])
 
         if len(group) > 1:
-            rval = '[ ' + ' '.join([_FormattedGroup(x, lc=lc) for x in group]) + ' ];'
+            rval = f"[ {' '.join([_FormattedGroup(x, lc=lc) for x in group])} ];"
         else:
-            rval = _FormattedGroup(group[0], lc=lc) + ';'
+            rval = f"{_FormattedGroup(group[0], lc=lc)};"
         return rval
 
     def __str__(self) -> str:
@@ -720,7 +715,7 @@ class JuniperMSMPC(aclgenerator.ACLGenerator):
 
             for comment in header.comment:
                 for line in comment.split('\n'):
-                    target.Append('** ' + line)
+                    target.Append(f"** {line}")
             target.Append('*/')
 
             if apply_groups:
@@ -728,7 +723,7 @@ class JuniperMSMPC(aclgenerator.ACLGenerator):
             target.Append('services {')
             target.Append('stateful-firewall {')
             target.Append('rule %s {' % filter_name)
-            target.Append('match-direction %s;' % filter_direction)
+            target.Append(f'match-direction {filter_direction};')
             for term in terms:
                 term_str = str(term)
                 if term_str:
@@ -741,8 +736,8 @@ class JuniperMSMPC(aclgenerator.ACLGenerator):
             if apply_groups:
                 target.Append('}')  # filter_name { ... }
                 target.Append('}')  # groups { ... }
-                target.Append('apply-groups %s;' % filter_name)
-        return str(target) + '\n'
+                target.Append(f'apply-groups {filter_name};')
+        return f"{target!s}\n"
 
 
 class Error(juniper.Error):

@@ -26,15 +26,9 @@ import ipaddress
 import json
 import logging
 import re
-import sys
-from typing import Dict, List, Set, Tuple, Union
+from typing import TypedDict
 
 from aerleon.lib import gcp, nacaddr, policy
-
-if sys.version_info < (3, 8):
-    from typing_extensions import TypedDict
-else:
-    from typing import TypedDict
 
 
 class Error(gcp.Error):
@@ -49,25 +43,28 @@ class ExceededAttributeCountError(Error):
     """Raised when the total attribute count of a policy is above the maximum."""
 
 
-LogConfig = TypedDict("LogConfig", {"enable": bool})
-L4Matcher = TypedDict("L4Matcher", {"IPProtocol": str, "ports": "list[str]"})
-FirewallRule = TypedDict(
-    "FirewallRule",
-    {
-        "name": str,
-        "description": str,
-        "network": str,
-        "priority": int,
-        "sourceRanges": "list[str]",
-        "destinationRanges": "list[str]",
-        "sourceTags": "list[str]",
-        "targetTags": "list[str]",
-        "allowed": "list[L4Matcher]",
-        "denied": "list[L4Matcher]",
-        "direction": str,  # Actually Enum
-        "logConfig": LogConfig,
-    },
-)
+class LogConfig(TypedDict):
+    enable: bool
+
+
+class L4Matcher(TypedDict):
+    IPProtocol: str
+    ports: 'list[str]'
+
+
+class FirewallRule(TypedDict):
+    name: str
+    description: str
+    network: str
+    priority: int
+    sourceRanges: 'list[str]'
+    destinationRanges: 'list[str]'
+    sourceTags: 'list[str]'
+    targetTags: 'list[str]'
+    allowed: 'list[L4Matcher]'
+    denied: 'list[L4Matcher]'
+    direction: str  # Actually Enum
+    logConfig: LogConfig
 
 
 def IsDefaultDeny(term: policy.Term) -> bool:
@@ -219,7 +216,7 @@ class Term(gcp.Term):
             if self.term.destination_tag:
                 raise GceFirewallError('GCE Egress rule cannot have destination tag.')
 
-    def ConvertToDict(self) -> List[FirewallRule]:
+    def ConvertToDict(self) -> list[FirewallRule]:
         """Convert term to a dictionary.
 
         This is used to get a dictionary describing this term which can be
@@ -233,7 +230,7 @@ class Term(gcp.Term):
           GceFirewallError: The term name is too long.
         """
         if self.term.owner:
-            self.term.comment.append('Owner: %s' % self.term.owner)
+            self.term.comment.append(f'Owner: {self.term.owner}')
         term_dict = {
             'description': ' '.join(self.term.comment),
             'name': self.term.name,
@@ -241,7 +238,7 @@ class Term(gcp.Term):
         }
         if self.term.network:
             term_dict['network'] = self.term.network
-            term_dict['name'] = '%s-%s' % (self.term.network.split('/')[-1], term_dict['name'])
+            term_dict['name'] = f"{self.term.network.split('/')[-1]}-{term_dict['name']}"
         # Identify if this is inet6 processing for a term under a mixed policy.
         mixed_policy_inet6_term = False
         if self.policy_inet_version == 'mixed' and self.inet_version == 'inet6':
@@ -253,11 +250,11 @@ class Term(gcp.Term):
         # Checking counts of tags, and ports to see if they exceeded limits.
         if len(self.term.source_tag) > self._TERM_SOURCE_TAGS_LIMIT:
             raise GceFirewallError(
-                'GCE firewall rule exceeded number of source tags per rule: %s' % self.term.name
+                f'GCE firewall rule exceeded number of source tags per rule: {self.term.name}'
             )
         if len(self.term.destination_tag) > self._TERM_TARGET_TAGS_LIMIT:
             raise GceFirewallError(
-                'GCE firewall rule exceeded number of target tags per rule: %s' % self.term.name
+                f'GCE firewall rule exceeded number of target tags per rule: {self.term.name}'
             )
 
         if self.term.source_tag:
@@ -279,7 +276,7 @@ class Term(gcp.Term):
         term_af = self.AF_MAP.get(self.inet_version)
         if self.inet_version == 'mixed':
             raise GceFirewallError(
-                'GCE firewall rule has incorrect inet_version for rule: %s' % self.term.name
+                f'GCE firewall rule has incorrect inet_version for rule: {self.term.name}'
             )
 
         # Exit early for inet6 processing of mixed rules that have only tags,
@@ -385,7 +382,7 @@ class Term(gcp.Term):
                         ports.append('%d-%d' % (start, end))
                 if len(ports) > self._TERM_PORTS_LIMIT:
                     raise GceFirewallError(
-                        'GCE firewall rule exceeded number of ports per rule: %s' % self.term.name
+                        f'GCE firewall rule exceeded number of ports per rule: {self.term.name}'
                     )
                 dest['ports'] = ports
 
@@ -428,7 +425,7 @@ class Term(gcp.Term):
         # Sanity checking term name lengths.
         long_rules = [rule['name'] for rule in rules if len(rule['name']) > 63]
         if long_rules:
-            raise GceFirewallError('GCE firewall name ended up being too long: %s' % long_rules)
+            raise GceFirewallError(f'GCE firewall name ended up being too long: {long_rules}')
         return rules
 
 
@@ -446,9 +443,9 @@ class GCE(gcp.GCP):
     # is rendered (which can add proto and a counter).
     _TERM_MAX_LENGTH = 53
     _GOOD_DIRECTION = ['INGRESS', 'EGRESS']
-    _OPTIONAL_SUPPORTED_KEYWORDS = set(['expiration', 'destination_tag', 'source_tag'])
+    _OPTIONAL_SUPPORTED_KEYWORDS = {'expiration', 'destination_tag', 'source_tag'}
 
-    def _BuildTokens(self) -> Tuple[Set[str], Dict[str, Set[str]]]:
+    def _BuildTokens(self) -> tuple[set[str], dict[str, set[str]]]:
         """Build supported tokens for platform.
 
         Returns:
@@ -543,7 +540,7 @@ class GCE(gcp.GCP):
                     term.name += '-e'
                 term.name = self.FixTermLength(term.name)
                 if term.name in term_names:
-                    raise GceFirewallError('Duplicate term name %s' % term.name)
+                    raise GceFirewallError(f'Duplicate term name {term.name}')
                 term_names.add(term.name)
 
                 term.direction = direction
@@ -587,7 +584,7 @@ class GCE(gcp.GCP):
         return out
 
 
-def GetAttributeCount(dict_term: Dict[str, Union[List, str]]) -> int:
+def GetAttributeCount(dict_term: dict[str, list | str]) -> int:
     """Calculate the attribute count of a term in its dictionary form.
 
     The attribute count of a rule is the sum of the number of ports, protocols, IP

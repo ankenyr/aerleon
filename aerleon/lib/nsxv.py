@@ -19,7 +19,6 @@
 import logging
 import re
 import xml
-from typing import Dict, List, Set, Tuple
 
 from aerleon.lib import aclgenerator, nacaddr, policy
 
@@ -109,7 +108,9 @@ class NsxvDuplicateTermError(Error):
 class Term(aclgenerator.Term):
     """Creates a  single ACL Term for Nsxv."""
 
-    def __init__(self, term: policy.Term, filter_type: str, applied_to: str = None, af: int = 4):
+    def __init__(
+        self, term: policy.Term, filter_type: str, applied_to: str | None = None, af: int = 4
+    ):
         self.term = term
         # Our caller should have already verified the address family.
         assert af in (4, 6)
@@ -170,13 +171,15 @@ class Term(aclgenerator.Term):
                 self.term.name,
             )
 
-        name = '%s%s%s' % (_XML_TABLE.get('nameStart'), self.term.name, _XML_TABLE.get('nameEnd'))
+        name = '{}{}{}'.format(
+            _XML_TABLE.get('nameStart'), self.term.name, _XML_TABLE.get('nameEnd')
+        )
 
         notes = ''
         if self.term.comment:
             for comment in self.term.comment:
-                notes = '%s%s' % (notes, comment)
-            notes = '%s%s%s' % (_XML_TABLE.get('noteStart'), notes, _XML_TABLE.get('noteEnd'))
+                notes = f'{notes}{comment}'
+            notes = f"{_XML_TABLE.get('noteStart')}{notes}{_XML_TABLE.get('noteEnd')}"
 
         # protocol
         protocol = None
@@ -284,34 +287,34 @@ class Term(aclgenerator.Term):
                 # inet4
                 if isinstance(saddr, nacaddr.IPv4):
                     if saddr.num_addresses > 1:
-                        saddr = '%s%s%s' % (
+                        saddr = '{}{}{}'.format(
                             _XML_TABLE.get('srcIpv4Start'),
                             saddr.with_prefixlen,
                             _XML_TABLE.get('srcIpv4End'),
                         )
                     else:
-                        saddr = '%s%s%s' % (
+                        saddr = '{}{}{}'.format(
                             _XML_TABLE.get('srcIpv4Start'),
                             saddr.network_address,
                             _XML_TABLE.get('srcIpv4End'),
                         )
-                    sources = '%s%s' % (sources, saddr)
+                    sources = f'{sources}{saddr}'
                 # inet6
                 if isinstance(saddr, nacaddr.IPv6):
                     if saddr.num_addresses > 1:
-                        saddr = '%s%s%s' % (
+                        saddr = '{}{}{}'.format(
                             _XML_TABLE.get('srcIpv6Start'),
                             saddr.with_prefixlen,
                             _XML_TABLE.get('srcIpv6End'),
                         )
                     else:
-                        saddr = '%s%s%s' % (
+                        saddr = '{}{}{}'.format(
                             _XML_TABLE.get('srcIpv6Start'),
                             saddr.network_address,
                             _XML_TABLE.get('srcIpv6End'),
                         )
-                    sources = '%s%s' % (sources, saddr)
-            sources = '%s%s' % (sources, '</sources>')
+                    sources = f'{sources}{saddr}'
+            sources = f'{sources}</sources>'
 
         destinations = ''
         if destination_addr:
@@ -320,34 +323,34 @@ class Term(aclgenerator.Term):
                 # inet4
                 if isinstance(daddr, nacaddr.IPv4):
                     if daddr.num_addresses > 1:
-                        daddr = '%s%s%s' % (
+                        daddr = '{}{}{}'.format(
                             _XML_TABLE.get('destIpv4Start'),
                             daddr.with_prefixlen,
                             _XML_TABLE.get('destIpv4End'),
                         )
                     else:
-                        daddr = '%s%s%s' % (
+                        daddr = '{}{}{}'.format(
                             _XML_TABLE.get('destIpv4Start'),
                             daddr.network_address,
                             _XML_TABLE.get('destIpv4End'),
                         )
-                    destinations = '%s%s' % (destinations, daddr)
+                    destinations = f'{destinations}{daddr}'
                 # inet6
                 if isinstance(daddr, nacaddr.IPv6):
                     if daddr.num_addresses > 1:
-                        daddr = '%s%s%s' % (
+                        daddr = '{}{}{}'.format(
                             _XML_TABLE.get('destIpv6Start'),
                             daddr.with_prefixlen,
                             _XML_TABLE.get('destIpv6End'),
                         )
                     else:
-                        daddr = '%s%s%s' % (
+                        daddr = '{}{}{}'.format(
                             _XML_TABLE.get('destIpv6Start'),
                             daddr.network_address,
                             _XML_TABLE.get('destIpv6End'),
                         )
-                    destinations = '%s%s' % (destinations, daddr)
-            destinations = '%s%s' % (destinations, '</destinations>')
+                    destinations = f'{destinations}{daddr}'
+            destinations = f'{destinations}</destinations>'
 
         services = []
         if protocol:
@@ -361,22 +364,22 @@ class Term(aclgenerator.Term):
 
         service = ''
         for s in services:
-            service = '%s%s' % (service, s)
+            service = f'{service}{s}'
 
         # applied_to
         applied_to_list = ''
         if self.applied_to:
             applied_to_list = '<appliedToList>'
-            applied_to_element = '%s%s%s' % (
+            applied_to_element = '{}{}{}'.format(
                 _XML_TABLE.get('appliedToStart'),
                 self.applied_to,
                 _XML_TABLE.get('appliedToEnd'),
             )
-            applied_to_list = '%s%s' % (applied_to_list, applied_to_element)
-            applied_to_list = '%s%s' % (applied_to_list, '</appliedToList>')
+            applied_to_list = f'{applied_to_list}{applied_to_element}'
+            applied_to_list = f'{applied_to_list}</appliedToList>'
 
         # action
-        action = '%s%s%s' % (
+        action = '{}{}{}'.format(
             _XML_TABLE.get('actionStart'),
             _ACTION_TABLE.get(str(self.term.action[0])),
             _XML_TABLE.get('actionEnd'),
@@ -394,7 +397,7 @@ class Term(aclgenerator.Term):
         return ''.join(ret_str)
 
     def _ServiceToString(
-        self, proto: int, sports: Tuple[int, int], dports: Tuple[int, int], icmp_types: List[str]
+        self, proto: int, sports: tuple[int, int], dports: tuple[int, int], icmp_types: list[str]
     ):
         """Converts service to string.
 
@@ -413,7 +416,7 @@ class Term(aclgenerator.Term):
         if proto == 1 or proto == 58:
             # handle icmp protocol
             for icmp_type in icmp_types:
-                icmp_service = '%s%s%s%s' % (
+                icmp_service = '{}{}{}{}'.format(
                     _XML_TABLE.get('serviceStart'),
                     _XML_TABLE.get('protocolStart'),
                     proto,
@@ -421,17 +424,17 @@ class Term(aclgenerator.Term):
                 )
                 # handle icmp types
                 if icmp_type:
-                    icmp_type = '%s%s%s' % (
+                    icmp_type = '{}{}{}'.format(
                         _XML_TABLE.get('icmpTypeStart'),
                         str(icmp_type),
                         _XML_TABLE.get('icmpTypeEnd'),
                     )
-                    icmp_service = '%s%s' % (icmp_service, icmp_type)
-                icmp_service = '%s%s' % (icmp_service, _XML_TABLE.get('serviceEnd'))
-                service = '%s%s' % (service, icmp_service)
+                    icmp_service = f'{icmp_service}{icmp_type}'
+                icmp_service = f"{icmp_service}{_XML_TABLE.get('serviceEnd')}"
+                service = f'{service}{icmp_service}'
         else:
             # handle other protocols
-            service = '%s%s%s%s' % (
+            service = '{}{}{}{}'.format(
                 _XML_TABLE.get('serviceStart'),
                 _XML_TABLE.get('protocolStart'),
                 proto,
@@ -443,10 +446,10 @@ class Term(aclgenerator.Term):
                 str_sport = []
                 for sport in sports:
                     if sport[0] != sport[1]:
-                        str_sport.append('%s-%s' % (sport[0], sport[1]))
+                        str_sport.append(f'{sport[0]}-{sport[1]}')
                     else:
-                        str_sport.append('%s' % (sport[0]))
-                service = '%s%s%s%s' % (
+                        str_sport.append(f'{sport[0]}')
+                service = '{}{}{}{}'.format(
                     service,
                     _XML_TABLE.get('srcPortStart'),
                     ', '.join(str_sport),
@@ -458,16 +461,16 @@ class Term(aclgenerator.Term):
                 str_dport = []
                 for dport in dports:
                     if dport[0] != dport[1]:
-                        str_dport.append('%s-%s' % (dport[0], dport[1]))
+                        str_dport.append(f'{dport[0]}-{dport[1]}')
                     else:
-                        str_dport.append('%s' % (dport[0]))
-                service = '%s%s%s%s' % (
+                        str_dport.append(f'{dport[0]}')
+                service = '{}{}{}{}'.format(
                     service,
                     _XML_TABLE.get('destPortStart'),
                     ', '.join(str_dport),
                     _XML_TABLE.get('destPortEnd'),
                 )
-            service = '%s%s' % (service, _XML_TABLE.get('serviceEnd'))
+            service = f"{service}{_XML_TABLE.get('serviceEnd')}"
 
         return service
 
@@ -491,15 +494,13 @@ class Nsxv(aclgenerator.ACLGenerator):
     _DEFAULT_PROTOCOL = 'ip'
     SUFFIX = '.nsx'
 
-    _OPTIONAL_SUPPORTED_KEYWORDS = set(
-        [
-            'expiration',
-            'logging',
-        ]
-    )
+    _OPTIONAL_SUPPORTED_KEYWORDS = {
+        'expiration',
+        'logging',
+    }
     _FILTER_OPTIONS_DICT = {}
 
-    def _BuildTokens(self) -> Tuple[Set[str], Dict[str, Set[str]]]:
+    def _BuildTokens(self) -> tuple[set[str], dict[str, set[str]]]:
         """Build supported tokens for platform.
 
         Returns:
@@ -532,7 +533,7 @@ class Nsxv(aclgenerator.ACLGenerator):
             for term in terms:
                 # Check for duplicate terms
                 if term.name in term_names:
-                    raise NsxvDuplicateTermError('There are multiple terms named: %s' % term.name)
+                    raise NsxvDuplicateTermError(f'There are multiple terms named: {term.name}')
                 term_names.add(term.name)
 
                 # Get the mapped action value
@@ -576,7 +577,7 @@ class Nsxv(aclgenerator.ACLGenerator):
 
             self.nsxv_policies.append((header, filter_name, [filter_type], new_terms))
 
-    def _ParseFilterOptions(self, filter_options: List[str]):
+    def _ParseFilterOptions(self, filter_options: list[str]):
         """Parses the target in header for filter type, section_id and applied_to.
 
         Args:
@@ -627,7 +628,7 @@ class Nsxv(aclgenerator.ACLGenerator):
                         break
                     else:
                         raise UnsupportedNsxvAccessListError(
-                            'Security Group Id is not provided for %s' % (self._PLATFORM)
+                            f'Security Group Id is not provided for {self._PLATFORM}'
                         )
 
         self._FILTER_OPTIONS_DICT['section_name'] = section_name
@@ -662,7 +663,7 @@ class Nsxv(aclgenerator.ACLGenerator):
                 target.append('<section name="%s">' % (section_name.strip(' \t\n\r')))
             else:
                 target.append(
-                    '<section id="%s" name="%s">' % (section_id, section_name.strip(' \t\n\r'))
+                    '<section id="{}" name="{}">'.format(section_id, section_name.strip(' \t\n\r'))
                 )
 
             # now add the terms
@@ -673,7 +674,7 @@ class Nsxv(aclgenerator.ACLGenerator):
 
             # ensure that the header is always first
             target = target_header + target
-            target.append('%s' % (_XML_TABLE.get('sectionEnd')))
+            target.append(f"{_XML_TABLE.get('sectionEnd')}")
             target.append('\n')
 
             target_as_xml = xml.dom.minidom.parseString(''.join(target))

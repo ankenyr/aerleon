@@ -1241,7 +1241,7 @@ class JuniperTest(parameterized.TestCase):
     def testNoVerboseV4(self):
         addr_list = list()
         for octet in range(0, 256):
-            net = nacaddr.IP('192.168.' + str(octet) + '.64/27')
+            net = nacaddr.IP(f"192.168.{octet!s}.64/27")
             addr_list.append(str(net))
         self.naming._ParseLine(f'SOME_HOST = {" ".join(addr_list)}', 'networks')
         self.naming._ParseLine('SMTP = 25/tcp', 'services')
@@ -1260,7 +1260,7 @@ class JuniperTest(parameterized.TestCase):
     def testNoVerboseV6(self):
         addr_list = list()
         for octet in range(0, 256):
-            net = nacaddr.IPv6('2001:db8:1010:' + str(octet) + '::64/64', strict=False)
+            net = nacaddr.IPv6(f"2001:db8:1010:{octet!s}::64/64", strict=False)
             addr_list.append(str(net))
         self.naming._ParseLine(f'SOME_HOST = {" ".join(addr_list)}', 'networks')
         self.naming._ParseLine('SMTP = 25/tcp', 'services')
@@ -1279,7 +1279,7 @@ class JuniperTest(parameterized.TestCase):
     def testDsmo(self):
         addr_list = list()
         for octet in range(0, 256):
-            net = nacaddr.IP('192.168.' + str(octet) + '.64/27')
+            net = nacaddr.IP(f"192.168.{octet!s}.64/27")
             addr_list.append(str(net))
         self.naming._ParseLine(f'SOME_HOST = {" ".join(addr_list)}', 'networks')
         self.naming._ParseLine('SMTP = 25/tcp', 'services')
@@ -1310,7 +1310,6 @@ class JuniperTest(parameterized.TestCase):
         self.naming._ParseLine('INTERNAL = 0.0.0.0/1', 'networks')
         self.naming._ParseLine('SOME_HOST = 192.168.0.64/27 192.168.1.64/27', 'networks')
 
-        mock_calls = []
         for term in terms:
             jcl = juniper.Juniper(
                 policy.ParsePolicy(GOOD_DSMO_HEADER + term, self.naming), EXP_INFO
@@ -1502,9 +1501,9 @@ class JuniperTest(parameterized.TestCase):
         )
         output = str(jcl)
         for result in expected:
-            self.assertIn(result, output, 'expected "%s" in %s' % (result, output))
+            self.assertIn(result, output, f'expected "{result}" in {output}')
         for result in unexpected:
-            self.assertNotIn(result, output, 'unexpected "%s" in %s' % (result, output))
+            self.assertNotIn(result, output, f'unexpected "{result}" in {output}')
 
         print(output)
 

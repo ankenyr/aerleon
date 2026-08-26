@@ -18,7 +18,6 @@
 
 import logging
 import string
-from typing import Dict, List, Set, Tuple, Union
 
 from aerleon.lib import aclgenerator, nacaddr
 from aerleon.lib.nacaddr import IPv4, IPv6
@@ -63,7 +62,7 @@ class Term(aclgenerator.Term):
         else:
             self._all_ips = nacaddr.IPv4('0.0.0.0/0')
 
-        self.term_name = '%s_%s' % (self.filter[:1], self.term.name)
+        self.term_name = f'{self.filter[:1]}_{self.term.name}'
 
     def __str__(self) -> str:
         ret_str = []
@@ -139,7 +138,7 @@ class Term(aclgenerator.Term):
         # if a srcport or dstport is specified.  Fail if src or dst ports are
         # specified and of the protocols are not exactly one or both of 'tcp'
         # or 'udp'.
-        if (not set(protocols).issubset(set(['tcp', 'udp']))) and (
+        if (not set(protocols).issubset({'tcp', 'udp'})) and (
             len(src_ports) > 1 or len(dst_ports) > 1
         ):
             raise aclgenerator.UnsupportedFilterError(
@@ -163,7 +162,7 @@ class Term(aclgenerator.Term):
 
         return '\n'.join(str(v) for v in ret_str if v)
 
-    def _HandleIcmpTypes(self, icmp_types: List[str], protocols: List[str]) -> Tuple[None, None]:
+    def _HandleIcmpTypes(self, icmp_types: list[str], protocols: list[str]) -> tuple[None, None]:
         """Perform implementation-specific icmp_type and protocol transforms.
 
         Note that icmp_types or protocols are passed as parameters in case they
@@ -180,8 +179,8 @@ class Term(aclgenerator.Term):
         return None, None
 
     def _HandlePorts(
-        self, src_ports: List[Tuple[int, int]], dst_ports: List[Tuple[int, int]]
-    ) -> Tuple[None, None]:
+        self, src_ports: list[tuple[int, int]], dst_ports: list[tuple[int, int]]
+    ) -> tuple[None, None]:
         """Perform implementation-specific port transforms.
 
         Note that icmp_types or protocols are passed as parameters in case they
@@ -197,7 +196,7 @@ class Term(aclgenerator.Term):
         """
         return None, None
 
-    def _HandlePreRule(self, ret_str: List[str]) -> None:
+    def _HandlePreRule(self, ret_str: list[str]) -> None:
         """Perform any pre-cartesian product transforms on the ret_str array.
 
         Args:
@@ -208,13 +207,13 @@ class Term(aclgenerator.Term):
 
     def _CartesianProduct(
         self,
-        src_addr: List[Union[IPv4, IPv6]],
-        dst_addr: List[Union[IPv4, IPv6]],
-        protocol: List[str],
-        unused_icmp_types: List[str],
-        src_port: List[str],
-        dst_port: List[str],
-        ret_str: List[str],
+        src_addr: list[IPv4 | IPv6],
+        dst_addr: list[IPv4 | IPv6],
+        protocol: list[str],
+        unused_icmp_types: list[str],
+        src_port: list[str],
+        dst_port: list[str],
+        ret_str: list[str],
     ) -> None:
         """Perform any the appropriate cartesian product of the input parameters.
 
@@ -252,7 +251,7 @@ class WindowsGenerator(aclgenerator.ACLGenerator):
 
     _GOOD_AFS = ['inet', 'inet6']
 
-    def _BuildTokens(self) -> Tuple[Set[str], Dict[str, Set[str]]]:
+    def _BuildTokens(self) -> tuple[set[str], dict[str, set[str]]]:
         """Build supported tokens for platform.
 
         Returns:
@@ -335,7 +334,7 @@ class WindowsGenerator(aclgenerator.ACLGenerator):
             for term in terms:
                 if term.name in term_names:
                     raise aclgenerator.DuplicateTermError(
-                        'You have a duplicate term: %s' % term.name
+                        f'You have a duplicate term: {term.name}'
                     )
                 term_names.add(term.name)
 
@@ -349,14 +348,14 @@ class WindowsGenerator(aclgenerator.ACLGenerator):
 
     def __str__(self) -> str:
         target = []
-        pretty_platform = '%s%s' % (self._PLATFORM[0].upper(), self._PLATFORM[1:])
+        pretty_platform = f'{self._PLATFORM[0].upper()}{self._PLATFORM[1:]}'
 
         if self._RENDER_PREFIX:
             target.append(self._RENDER_PREFIX)
 
         for header, _, filter_type, default_action, terms in self.windows_policies:
             # Add comments for this filter
-            target.append(': %s %s Policy' % (pretty_platform, header.FilterName(self._PLATFORM)))
+            target.append(f': {pretty_platform} {header.FilterName(self._PLATFORM)} Policy')
 
             self._HandlePolicyHeader(header, target)
 
@@ -364,11 +363,11 @@ class WindowsGenerator(aclgenerator.ACLGenerator):
             comments = aclgenerator.WrapWords(header.comment, 70)
             if comments and comments[0]:
                 for line in comments:
-                    target.append(': %s' % line)
+                    target.append(f': {line}')
                 target.append(':')
             # add the p4 tags
             target.extend(aclgenerator.AddRepositoryTags(': '))
-            target.append(': ' + filter_type)
+            target.append(f": {filter_type}")
 
             if default_action:
                 raise aclgenerator.UnsupportedTargetOptionError(
@@ -385,8 +384,8 @@ class WindowsGenerator(aclgenerator.ACLGenerator):
         target.append('')
         return '\n'.join(target)
 
-    def _HandlePolicyHeader(self, header: Header, target: List[str]) -> None:
+    def _HandlePolicyHeader(self, header: Header, target: list[str]) -> None:
         pass
 
-    def _HandleTermFooter(self, header: Header, term: Term, target: List[str]) -> None:
+    def _HandleTermFooter(self, header: Header, term: Term, target: list[str]) -> None:
         pass

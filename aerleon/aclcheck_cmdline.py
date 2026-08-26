@@ -55,12 +55,17 @@ def main():
         dest='config_file',
         help='Change the location searched for the configuration YAML file.',
     )
-    _parser.add_argument('-d', '--destination', dest='destination_ip', help='Destination IP.')
+    _parser.add_argument(
+        '-d',
+        '--destination',
+        dest='destination_ip',
+        help='Destination IP address or network.',
+    )
     _parser.add_argument(
         '-s',
         '--source',
         dest='source_ip',
-        help='Source IP.',
+        help='Source IP address or network.',
     )
     _parser.add_argument(
         '--proto',
@@ -78,6 +83,18 @@ def main():
     _parser.add_argument(
         '--sport', '--source-port', '--source_port', dest='source_port', help='Source port.'
     )
+    _parser.add_argument(
+        '--source-zone',
+        '--source_zone',
+        dest='source_zone',
+        help='Source security/zone identifier. When provided, `AclCheck` will only match terms that either have no `source-zone` constraint or explicitly match this zone. Use the exact zone name as used in your policy (case-sensitive).',
+    )
+    _parser.add_argument(
+        '--destination-zone',
+        '--destination_zone',
+        dest='destination_zone',
+        help='Destination security/zone identifier. When provided, `AclCheck` will only match terms that either have no `destination-zone` constraint or explicitly match this zone. Use the exact zone name as used in your policy (case-sensitive).',
+    )
     FLAGS = _parser.parse_args()
 
     default_flags = {
@@ -90,6 +107,8 @@ def main():
         'protocol': 'any',
         'destination_port': '80',
         'source_port': '1025',
+        'source_zone': None,
+        'destination_zone': None,
     }
 
     configs = {}
@@ -131,6 +150,8 @@ def main():
         sport=configs['source_port'],
         dport=configs['destination_port'],
         proto=configs['protocol'],
+        source_zone=configs.get('source_zone'),
+        destination_zone=configs.get('destination_zone'),
     )
     print(str(check))
 

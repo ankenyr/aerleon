@@ -8,15 +8,9 @@ Hierarchical Firewalls (HF) are represented in a SecurityPolicy GCP resouce.
 import copy
 import logging
 import re
-import sys
-from typing import Dict, List, Set, Tuple, Union
+from typing import TypedDict
 
 from aerleon.lib import gcp, nacaddr, policy
-
-if sys.version_info < (3, 8):
-    from typing_extensions import TypedDict
-else:
-    from typing import TypedDict
 
 
 class ExceededCostError(gcp.Error):
@@ -50,28 +44,34 @@ class ApiVersionSyntaxMap:
     }
 
 
-L4Matcher = TypedDict("L4Matcher", {"IPProtocol": str, "ports": "list[str]"})
-MatchConfig = TypedDict(
-    "MatchConfig",
-    {"destIpRanges": "list[str]", "srcIpRanges": "list[str]", "layer4Configs": "list[L4Matcher]"},
-)
+class L4Matcher(TypedDict):
+    IPProtocol: str
+    ports: 'list[str]'
+
+
+class MatchConfig(TypedDict):
+    destIpRanges: 'list[str]'
+    srcIpRanges: 'list[str]'
+    layer4Configs: 'list[L4Matcher]'
+
+
 RuleMatch = TypedDict("PropertyMap", {"config": MatchConfig, "versionedExpr": str})
-OrganizationalPolicyRule = TypedDict(
-    "OrganizationalPolicyRule",
-    {
-        "action": str,
-        "match": RuleMatch,
-        "priority": int,
-        "description": str,
-        "direction": str,
-        "enableLogging": bool,
-        "targetResources": "list[str]",
-    },
-)
-OrganizationPolicy = TypedDict(
-    "OrganizationPolicy",
-    {"displayName": str, "type": str, "rules": "list[OrganizationalPolicyRule]"},
-)
+
+
+class OrganizationalPolicyRule(TypedDict):
+    action: str
+    match: RuleMatch
+    priority: int
+    description: str
+    direction: str
+    enableLogging: bool
+    targetResources: 'list[str]'
+
+
+class OrganizationPolicy(TypedDict):
+    displayName: str
+    type: str
+    rules: 'list[OrganizationalPolicyRule]'
 
 
 class Term(gcp.Term):
@@ -165,7 +165,7 @@ class Term(gcp.Term):
                 % self.term.name
             )
 
-    def ConvertToDict(self, priority_index: int) -> List[OrganizationPolicy]:
+    def ConvertToDict(self, priority_index: int) -> list[OrganizationPolicy]:
         """Converts term to dict representation of SecurityPolicy.Rule JSON format.
 
         Takes all of the attributes associated with a term (match, action, etc) and
@@ -212,7 +212,7 @@ class Term(gcp.Term):
         term_name = self.term.name
         if mixed_policy_inet6_term:
             term_name = gcp.GetIpv6TermName(term_name)
-        raw_description = term_name + ': ' + ' '.join(self.term.comment)
+        raw_description = f"{term_name}: {' '.join(self.term.comment)}"
         term_dict['description'] = gcp.TruncateString(
             raw_description, self._MAX_TERM_COMMENT_LENGTH
         )
@@ -373,7 +373,7 @@ class HierarchicalFirewall(gcp.GCP):
     _SUPPORTED_API_VERSION = frozenset(['beta', 'ga'])
     _DEFAULT_MAXIMUM_COST = 100
 
-    def _BuildTokens(self) -> Tuple[Set[str], Dict[str, Set[str]]]:
+    def _BuildTokens(self) -> tuple[set[str], dict[str, set[str]]]:
         """Build supported tokens for platform.
 
         Returns:
@@ -571,7 +571,7 @@ class HierarchicalFirewall(gcp.GCP):
             logging.info('Policy %s quota cost: %d', policy[display_name], total_cost)
 
 
-def GetRuleTupleCount(dict_term: Dict[str, Union[List, str]], api_version: str) -> int:
+def GetRuleTupleCount(dict_term: dict[str, list | str], api_version: str) -> int:
     """Calculate the tuple count of a rule in its dictionary form.
 
     Quota is charged based on how complex the rules are rather than simply

@@ -18,6 +18,7 @@
 import datetime
 import re
 from unittest import mock
+from unittest.mock import call
 
 from absl.testing import absltest
 
@@ -770,7 +771,7 @@ class AristaTpTest(absltest.TestCase):
     def testNoVerboseMixed(self):
         addr_list = list()
         for octet in range(0, 256):
-            net = nacaddr.IP("192.168." + str(octet) + ".64/27")
+            net = nacaddr.IP(f"192.168.{octet!s}.64/27")
             addr_list.append(str(net))
         self.naming._ParseLine(f'SOME_HOST = {" ".join(addr_list)}', 'networks')
         self.naming._ParseLine('SMTP = 25/tcp', 'services')
@@ -789,7 +790,7 @@ class AristaTpTest(absltest.TestCase):
     def testNoVerboseV4(self):
         addr_list = list()
         for octet in range(0, 256):
-            net = nacaddr.IP("192.168." + str(octet) + ".64/27")
+            net = nacaddr.IP(f"192.168.{octet!s}.64/27")
             addr_list.append(str(net))
         self.naming._ParseLine(f'SOME_HOST = {" ".join(addr_list)}', 'networks')
         self.naming._ParseLine('SMTP = 25/tcp', 'services')
@@ -808,7 +809,7 @@ class AristaTpTest(absltest.TestCase):
     def testNoVerboseV6(self):
         addr_list = list()
         for octet in range(0, 256):
-            net = nacaddr.IPv6("2001:db8:1010:" + str(octet) + "::64/64", strict=False)
+            net = nacaddr.IPv6(f"2001:db8:1010:{octet!s}::64/64", strict=False)
             addr_list.append(str(net))
         self.naming._ParseLine(f'SOME_HOST = {" ".join(addr_list)}', 'networks')
         self.naming._ParseLine('SMTP = 25/tcp', 'services')
@@ -887,7 +888,7 @@ class AristaTpTest(absltest.TestCase):
     @mock.patch.object(arista_tp.logging, "warning")
     @capture.stdout
     def testSkipTermAF(self, mock_warning):
-        self.naming._ParseLine(f'SOME_HOST = 10.0.0.0/8', 'networks')
+        self.naming._ParseLine('SOME_HOST = 10.0.0.0/8', 'networks')
         self.naming._ParseLine('SMTP = 25/tcp', 'services')
 
         atp = arista_tp.AristaTrafficPolicy(
@@ -1002,17 +1003,14 @@ class AristaTpTest(absltest.TestCase):
         )
         output = str(atp)
         self.assertNotIn("match", output, output)
-        mock_warn.has_calls(
-            "WARNING: term %s has no valid match criteria and " "will not be rendered.",
-            "missing-match",
+        call_message = "WARNING: term %s has no valid match criteria and will not be rendered."
+        mock_warn.assert_has_calls(
+            [call(call_message, "missing-match"), call(call_message, "ipv6-missing-match")]
         )
         print(output)
 
     @capture.stdout
     def testAddressExclude(self):
-        big = nacaddr.IPv4("0.0.0.0/1")
-        ip1 = nacaddr.IPv4("10.0.0.0/8")
-        ip2 = nacaddr.IPv4("172.16.0.0/12")
         terms = (GOOD_TERM_18_SRC, GOOD_TERM_18_DST)
         self.naming._ParseLine('INTERNAL = 0.0.0.0/1 10.0.0.0/8 172.16.0.0/12', 'networks')
         self.naming._ParseLine('SOME_HOST = 10.0.0.0/8', 'networks')

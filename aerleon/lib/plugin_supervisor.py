@@ -39,37 +39,35 @@ Plug-in authors may observe that this module exposes its internal state
 directly on the module for transparency. These names should be treated as
 undocumented and subject to change.
 """
+
 from __future__ import annotations
 
 import importlib.util
+import logging
 import pathlib
-import sys
 from dataclasses import dataclass
 from importlib import import_module
-from typing import List, Optional, Tuple
-
-if sys.version_info < (3, 10):
-    from importlib_metadata import entry_points, version
-else:
-    from importlib.metadata import entry_points, version
-
-import logging
+from importlib.metadata import entry_points, version
 
 from aerleon.lib import plugin
 from aerleon.lib.aclgenerator import ACLGenerator
+from aerleon.lib.plugin import SystemMetadata
 
-__all__ = ["PluginSupervisor", "PluginSupervisorConfiguration", "SystemMetadata"]
+__all__ = [
+    "PluginSupervisor",
+    "PluginSupervisorConfiguration",
+]
 
 
 class _PluginSupervisor:
     is_setup: bool
-    plugins: list[Tuple]
-    generators: dict
+    plugins: list[tuple]
+    generators: dict[str, type[ACLGenerator]]
 
     def __init__(self) -> None:
         self.is_setup = False
 
-    def Start(self, config: PluginSupervisorConfiguration = None) -> None:
+    def Start(self, config: PluginSupervisorConfiguration | None = None) -> None:
         setup = _PluginSetup(config)
         self.plugins, self.generators = setup.plugins, setup.generators
         self.is_setup = True
@@ -78,19 +76,13 @@ class _PluginSupervisor:
 __doc_PluginSupervisor__ = """Singleton PluginSupervisor instance."""
 PluginSupervisor = _PluginSupervisor()
 
-
-@dataclass
-class SystemMetadata:
-    engine_version: str
-
-
 __doc_SYSTEM_METADATA__ = """Public module constant system metadata."""
 SYSTEM_METADATA: SystemMetadata = SystemMetadata(engine_version=version("aerleon"))
 
 __doc_BUILTIN_PLUGINS__ = (
     """Built-in plugins included with this project. These will always be loaded.""",
 )
-BUILTIN_GENERATORS: list[Tuple] = [
+BUILTIN_GENERATORS: list[tuple] = [
     # fmt: off
     #Target                  Module                              Constructor
     ('juniper',              'aerleon.lib.juniper',              'Juniper'),
@@ -119,11 +111,14 @@ BUILTIN_GENERATORS: list[Tuple] = [
     ('ciscoxr',              'aerleon.lib.ciscoxr',              'CiscoXR'),
     ('nftables',             'aerleon.lib.nftables',             'Nftables'),
     ('nokiasrl',             'aerleon.lib.nokiasrl',             'NokiaSRLinux'),
+    ('nvueapi',              'aerleon.lib.nvueapi',              'NvueApi'),
     ('gce',                  'aerleon.lib.gce',                  'GCE'),
     ('gcp_hf',               'aerleon.lib.gcp_hf',               'HierarchicalFirewall'),
     ('paloalto',             'aerleon.lib.paloaltofw',           'PaloAltoFW'),
     ('cloudarmor',           'aerleon.lib.cloudarmor',           'CloudArmor'),
     ('k8s',                  'aerleon.lib.k8s',                  'K8s'),
+    ('fortigate',            'aerleon.lib.fortigate',            'Fortigate'),
+    ('proxmox',              'aerleon.lib.proxmox',              'Proxmox'),
     # fmt: on
 ]
 
@@ -156,9 +151,9 @@ class PluginSupervisorConfiguration:
     """
 
     disable_discovery: bool = False
-    disable_plugin: list[str] = None
-    disable_builtin: list[str] = None
-    include_path: list[list[str]] = None
+    disable_plugin: list[str] | None = None
+    disable_builtin: list[str] | None = None
+    include_path: list[list[str]] | None = None
 
 
 class _PluginSetup:
@@ -175,14 +170,14 @@ class _PluginSetup:
     """
 
     disable_discovery: bool = False
-    disable_plugin: list[str] = None
-    disable_builtin: list[str] = None
-    include_path: list[list[str]] = None
+    disable_plugin: list[str] | None = None
+    disable_builtin: list[str] | None = None
+    include_path: list[list[str]] | None = None
 
-    def __init__(self, config: PluginSupervisorConfiguration = None) -> None:
+    def __init__(self, config: PluginSupervisorConfiguration | None = None) -> None:
         """Initialize self.generators, self.plugins."""
 
-        self.generators = {}
+        self.generators: dict[str, type[ACLGenerator]] = {}
         self.plugins = []
 
         # Apply configuration if provided
@@ -252,9 +247,9 @@ class _PluginSetup:
         logging.info(f"{len(self.plugins)} plugins active.")
         logging.info(f"{len(self.generators)} generators registered.")
 
-    def _CollectEntrypointPlugins(self):
+    def _CollectEntrypointPlugins(self) -> list[tuple[str, plugin.BasePlugin]]:
         """Locate and import modules using entrypoint discovery."""
-        loaded_plugins = []
+        loaded_plugins: list[tuple[str, plugin.BasePlugin]] = []
         for ep_plugin in entry_points(group='aerleon.plugin'):
             if self.disable_plugin and ep_plugin.name in self.disable_plugin:
                 continue
@@ -284,8 +279,8 @@ class _PluginSetup:
         return loaded_plugins
 
     def _CollectBuiltinGenerators(
-        self, builtin_generators: List[Tuple[str, str, str]]
-    ) -> List[Tuple[str, ACLGenerator]]:
+        self, builtin_generators: list[tuple[str, str, str]]
+    ) -> list[tuple[str, type[ACLGenerator]]]:
         """Import built-in modules by name."""
         loaded_generators = []
         for target, module_name, class_or_func in builtin_generators:

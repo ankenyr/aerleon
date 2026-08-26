@@ -877,18 +877,18 @@ class PolicyTest(parameterized.TestCase):
     def testGoodAddrExcludesFlatten(self):
         expected = sorted(
             [
-                nacaddr.IPv4(u'10.0.0.0/11'),
-                nacaddr.IPv4(u'10.32.0.0/12'),
-                nacaddr.IPv4(u'10.48.0.0/13'),
-                nacaddr.IPv4(u'10.56.0.0/14'),
-                nacaddr.IPv4(u'10.60.0.0/15'),
-                nacaddr.IPv4(u'10.64.0.0/10'),
-                nacaddr.IPv4(u'10.130.0.0/15'),
-                nacaddr.IPv4(u'10.132.0.0/14'),
-                nacaddr.IPv4(u'10.136.0.0/13'),
-                nacaddr.IPv4(u'10.144.0.0/12'),
-                nacaddr.IPv4(u'10.160.0.0/11'),
-                nacaddr.IPv4(u'10.192.0.0/10'),
+                nacaddr.IPv4('10.0.0.0/11'),
+                nacaddr.IPv4('10.32.0.0/12'),
+                nacaddr.IPv4('10.48.0.0/13'),
+                nacaddr.IPv4('10.56.0.0/14'),
+                nacaddr.IPv4('10.60.0.0/15'),
+                nacaddr.IPv4('10.64.0.0/10'),
+                nacaddr.IPv4('10.130.0.0/15'),
+                nacaddr.IPv4('10.132.0.0/14'),
+                nacaddr.IPv4('10.136.0.0/13'),
+                nacaddr.IPv4('10.144.0.0/12'),
+                nacaddr.IPv4('10.160.0.0/11'),
+                nacaddr.IPv4('10.192.0.0/10'),
             ]
         )
         pol = HEADER + GOOD_TERM_27
@@ -989,7 +989,7 @@ class PolicyTest(parameterized.TestCase):
         pol = HEADER + TERM_UNSORTED_ICMP_TYPE
         ret = policy.ParsePolicy(pol, self.naming)
         icmp_types = ['echo-reply', 'echo-request', 'unreachable']
-        expected = 'icmp_type: %s' % icmp_types
+        expected = f'icmp_type: {icmp_types}'
         self.assertIn(expected, str(ret))
 
     def testICMPCodesSorting(self):
@@ -1307,8 +1307,8 @@ class PolicyTest(parameterized.TestCase):
         pol = HEADER + GOOD_TERM_48
         result = policy.ParsePolicy(pol, self.naming)
         zones = ['zone1', 'zone2']
-        expected_source = 'source_zone: %s' % zones
-        expected_destination = 'destination_zone: %s' % zones
+        expected_source = f'source_zone: {zones}'
+        expected_destination = f'destination_zone: {zones}'
         self.assertIn(expected_source, str(result))
         self.assertIn(expected_destination, str(result))
 
@@ -1349,7 +1349,7 @@ class PolicyTest(parameterized.TestCase):
     def testLogLimit(self):
         pol = policy.ParsePolicy(HEADER_4 + GOOD_TERM_44, self.naming)
         term = pol.filters[0][1][0]
-        self.assertEqual((u'999', u'day'), term.log_limit)
+        self.assertEqual(('999', 'day'), term.log_limit)
 
     def testGREandTCPUDPError(self):
         pol = HEADER + BAD_TERM_16

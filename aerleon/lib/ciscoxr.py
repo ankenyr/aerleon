@@ -17,8 +17,6 @@
 """Cisco IOS-XR filter renderer."""
 from __future__ import annotations
 
-from typing import Dict, List, Set, Tuple
-
 from aerleon.lib import cisco
 from aerleon.lib.policy import Term
 
@@ -31,7 +29,7 @@ class CiscoXR(cisco.Cisco):
     SUFFIX = '.xacl'
     _PROTO_INT = False
 
-    def _AppendTargetByFilterType(self, filter_name: str, filter_type: str) -> List[str]:
+    def _AppendTargetByFilterType(self, filter_name: str, filter_type: str) -> list[str]:
         """Takes in the filter name and type and appends headers.
 
         Args:
@@ -43,14 +41,14 @@ class CiscoXR(cisco.Cisco):
         """
         target = []
         if filter_type == 'inet6':
-            target.append('no ipv6 access-list %s' % filter_name)
-            target.append('ipv6 access-list %s' % filter_name)
+            target.append(f'no ipv6 access-list {filter_name}')
+            target.append(f'ipv6 access-list {filter_name}')
         else:
-            target.append('no ipv4 access-list %s' % filter_name)
-            target.append('ipv4 access-list %s' % filter_name)
+            target.append(f'no ipv4 access-list {filter_name}')
+            target.append(f'ipv4 access-list {filter_name}')
         return target
 
-    def _BuildTokens(self) -> Tuple[Set[str], Dict[str, Set[str]]]:
+    def _BuildTokens(self) -> tuple[set[str], dict[str, set[str]]]:
         """Build supported tokens for platform.
 
         Returns:

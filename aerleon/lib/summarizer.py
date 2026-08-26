@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import collections
-from typing import List, Tuple, Union
 
 from aerleon.lib import nacaddr
 from aerleon.lib.nacaddr import IPv4, IPv6
@@ -87,7 +86,7 @@ class DSMNet:
         return False
 
     def __str__(self) -> str:
-        return ' '.join([self.address, self.netmask])
+        return f"{self.address} {self.netmask}"
 
     def MergeText(self, text: str = '') -> str:
         """Returns self.text joined with optional text.
@@ -102,13 +101,13 @@ class DSMNet:
         """
         if self.text:
             if text and text not in self.text:
-                return ', '.join([self.text, text])
+                return f"{self.text}, {text}"
             return self.text
         else:
             return text
 
 
-def ToDottedQuad(net: DSMNet, negate: bool = False, nondsm: bool = False) -> Tuple[str, str]:
+def ToDottedQuad(net: DSMNet, negate: bool = False, nondsm: bool = False) -> tuple[str, str]:
     """Turns a DSMNet object into decimal dotted quad tuple.
 
     Args:
@@ -153,7 +152,7 @@ def _PrefixlenForNonDSM(intmask: int) -> str:
     if dotmask == '255.255.255.255':
         return '32'
 
-    bitmask = '{:032b}'.format(intmask)
+    bitmask = f'{intmask:032b}'
 
     prefixlen = 0
     while bitmask[prefixlen] == '1':
@@ -180,7 +179,7 @@ def _Int32ToDottedQuad(num: int) -> str:
     return '.'.join(octets)
 
 
-def _NacaddrNetToDSMNet(net: Union[IPv4, IPv6]) -> DSMNet:
+def _NacaddrNetToDSMNet(net: IPv4 | IPv6) -> DSMNet:
     """Converts nacaddr.IPv4 or nacaddr.IPv6 object into DSMNet object.
 
     Args:
@@ -211,12 +210,12 @@ def _ToPrettyBinaryFormat(num: int) -> str:
     # like ipaddr make assumption that this is ipv4
     byte_strings = []
     while num > 0 or len(byte_strings) < 4:
-        byte_strings.append('{0:08b}'.format(num & 0xFF))
+        byte_strings.append(f'{num & 0xFF:08b}')
         num >>= 8
     return ' '.join(reversed(byte_strings))
 
 
-def Summarize(nets: List[Union[IPv4, IPv6]]) -> List[DSMNet]:
+def Summarize(nets: list[IPv4 | IPv6]) -> list[DSMNet]:
     """Summarizes networks while allowing for discontinuous subnet mask.
 
     Args:
@@ -239,7 +238,7 @@ def Summarize(nets: List[Union[IPv4, IPv6]]) -> List[DSMNet]:
     return sorted(result)
 
 
-def _SummarizeSameMask(nets: List[DSMNet]) -> List[DSMNet]:
+def _SummarizeSameMask(nets: list[DSMNet]) -> list[DSMNet]:
     """Summarizes networks while allowing for discontinuous subnet mask.
 
     Args:

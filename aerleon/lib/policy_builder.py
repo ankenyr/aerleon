@@ -3,8 +3,10 @@
 import enum
 import logging
 import sys
-import typing
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import date
+from typing import TYPE_CHECKING, Annotated, Any, TypeAlias
 
 from aerleon.lib.policy import (
     FLEXIBLE_MATCH_RANGE_ATTRIBUTES,
@@ -28,69 +30,61 @@ from aerleon.lib.recognizers import (
     TValue,
 )
 
-if sys.version_info < (3, 8):
-    from typing_extensions import TypedDict
-else:
-    from typing import TypedDict
-
-if sys.version_info < (3, 9):
-    from typing_extensions import Annotated
-else:
-    from typing import Annotated
-
-if sys.version_info < (3, 10):
-    from typing_extensions import TypeAlias
-else:
-    from typing import TypeAlias
-
 if sys.version_info < (3, 11):
     from typing_extensions import NotRequired, Required
 else:
     from typing import NotRequired, Required
 
-if typing.TYPE_CHECKING:
-    from datetime import datetime
+if sys.version_info < (3, 12):
+    from typing_extensions import TypedDict
+else:
+    from typing import TypedDict
 
-    from aerleon.lib import naming
+if TYPE_CHECKING:
+    from aerleon.lib.naming import Naming
 
 
 # NOTE: TypedDict is just a normal dictionary, it is not a class. This syntax tells the type checker
 # what keys need to be present in the given dictionary.
 
-WordList: TypeAlias = "str | list[str]"
+WordList: TypeAlias = str | list[str]
 
-VPNValue = TypedDict('VPNValue', {"name": str, "policy": "NotRequired[str]"})
+
+class VPNValue(TypedDict):
+    name: str
+    policy: NotRequired[str]
+
 
 PolicyTerm = TypedDict(
     'PolicyTerm',
     {
         "comment": str,
-        "name": "Required[str]",
+        "name": Required[str],
         "action": WordList,
         "address": WordList,
         "address-exclude": WordList,
         "restrict-address-family": str,
         "counter": str,
-        "expiration": "datetime.date | str",
+        "expiration": date | str,
         "destination-address": WordList,
         "destination-exclude": WordList,
         "destination-fqdn": WordList,
         "destination-port": WordList,
         "destination-prefix": WordList,
         "filter-term": str,
-        "forwarding-class": "list[str]",
-        "forwarding-class-except": "list[str]",
+        "forwarding-class": list[str],
+        "forwarding-class-except": list[str],
         "logging": WordList,
         "log-limit": str,
         "log-name": str,
         "loss-priority": str,
-        "option": "list[str]",
+        "option": WordList,
         "owner": str,
         "policer": str,
         "port": WordList,
-        "precedence": "str | list[int | str]",
-        "protocol": "str | list[int | str]",
-        "protocol-except": "str | list[int | str]",
+        "precedence": int | str | Sequence[int | str],
+        "protocol": int | str | Sequence[int | str],
+        "protocol-except": int | str | Sequence[int | str],
         "qos": str,
         "pan-application": WordList,
         "routing-instance": str,
@@ -99,48 +93,53 @@ PolicyTerm = TypedDict(
         "source-fqdn": WordList,
         "source-port": WordList,
         "source-prefix": WordList,
-        "ttl": "int | str",
-        "verbatim": "dict[str, str]",
-        "packet-length": "int | str",
-        "fragment-offset": "int | str",
-        "hop-limit": "int | str",
+        "ttl": int | str,
+        "verbatim": dict[str, str],
+        "packet-length": int | str,
+        "fragment-offset": int | str,
+        "hop-limit": int | str,
         "icmp-type": WordList,
-        "icmp-code": "str | list[int | str]",
+        "icmp-code": int | str | Sequence[int | str],
         "ether-type": WordList,
         "traffic-class-count": str,
         "traffic-type": WordList,
-        "dscp-set": "int | str",
-        "dscp-match": "int | str | list[int | str]",
-        "dscp-except": "int | str | list[int | str]",
+        "dscp-set": int | str,
+        "dscp-match": int | str | Sequence[int | str],
+        "dscp-except": int | str | Sequence[int | str],
         "next-ip": str,
-        "flexible-match-range": "dict[str, int | str]",
+        "flexible-match-range": dict[str, int | str],
         "source-prefix-except": WordList,
         "destination-prefix-except": WordList,
         "encapsulate": str,
         "port-mirror": str,
         "destination-zone": WordList,
         "source-zone": WordList,
+        "profile-settings": WordList,
         "vpn": VPNValue,
         "source-tag": WordList,
         "destination-tag": WordList,
-        "priority": "int | str",
+        "priority": int | str,
         "source-interface": str,
         "destination-interface": str,
         "platform": WordList,
         "platform-exclude": WordList,
-        "target-resources": "list[str | list[str]]",
+        "target-resources": Sequence[str | list[str]],
         "target-service-accounts": WordList,
-        "timeout": "int | str",
+        "tags": WordList,
+        "timeout": int | str,
     },
     total=False,
 )
 
-PolicyInclude = TypedDict('PolicyInclude', {"include": str})
+
+class PolicyInclude(TypedDict):
+    include: str
+
 
 PolicyFilterHeader = TypedDict(
     'PolicyFilterHeader',
     {
-        "targets": "Required[dict[str, str]]",
+        "targets": Required[dict[str, str]],
         "comment": str,
         "apply-groups": WordList,
         "apply-groups-except": WordList,
@@ -148,11 +147,22 @@ PolicyFilterHeader = TypedDict(
     total=False,
 )
 
-PolicyFilter = TypedDict(
-    'PolicyFilter', {"header": PolicyFilterHeader, "terms": "list[PolicyTerm | PolicyInclude]"}
-)
 
-PolicyDict = TypedDict('PolicyDict', {"filters": "list[PolicyFilter]"})
+TermsList = Sequence[PolicyTerm | PolicyInclude]
+
+
+class PolicyFilter(TypedDict):
+    header: PolicyFilterHeader
+    terms: TermsList
+
+
+class PolicyFilterTermsOnly(TypedDict):
+    terms: TermsList
+
+
+class PolicyDict(TypedDict):
+    filters: list[PolicyFilter]
+    filename: NotRequired[str]
 
 
 RawTarget = Annotated[
@@ -173,8 +183,8 @@ class RawFilterHeader:
         kvs: A mapping containing any other key/value pairs in the header.
     """
 
-    targets: typing.Dict[str, RawTarget]
-    kvs: typing.Dict[str, typing.Any] = field(default_factory=dict)
+    targets: dict[str, RawTarget]
+    kvs: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -187,7 +197,7 @@ class RawTerm:
     """
 
     name: str
-    kvs: typing.Dict[str, typing.Any] = field(default_factory=dict)
+    kvs: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -200,7 +210,7 @@ class RawFilter:
     """
 
     header: RawFilterHeader
-    terms: "list[RawTerm]"
+    terms: list[RawTerm]
 
 
 @dataclass
@@ -213,7 +223,7 @@ class RawPolicy:
     """
 
     filename: str
-    filters: "list[RawFilter]"
+    filters: list[RawFilter]
 
 
 class PolicyBuilder:
@@ -256,19 +266,19 @@ class PolicyBuilder:
     """
 
     raw_policy: RawPolicy
-    definitions: "naming.Naming"
+    definitions: "Naming"
     optimize: bool
     shade_check: bool
 
     def __init__(
         self,
         policy_dict: PolicyDict,
-        definitions: "naming.Naming",
-        optimize=False,
-        shade_check=False,
-    ):
-        def PolicyDictToRawPolicy(input_policy):
-            raw_filters = []
+        definitions: "Naming",
+        optimize: bool = False,
+        shade_check: bool = False,
+    ) -> None:
+        def PolicyDictToRawPolicy(input_policy: PolicyDict) -> RawPolicy:
+            raw_filters: list[RawFilter] = []
             input_filters = input_policy["filters"]
             filename = input_policy.get("filename")
             for filter in input_filters:
@@ -436,7 +446,7 @@ class PolicyBuilder:
 # ### BUILTINS ###
 # The following section deals with the recognition and normalization of built-in keywords.
 
-BUILTIN_SPEC: "dict[str, TValue | TComposition]" = {
+BUILTIN_SPEC: dict[str, TValue | TComposition] = {
     # fmt: off
     'apply-groups':               TListStrCollapsible,
     'apply-groups-except':        TListStrCollapsible,
@@ -496,6 +506,8 @@ BUILTIN_SPEC: "dict[str, TValue | TComposition]" = {
     'destination-prefix-except':  TListStrCollapsible,
     'encapsulate':                TValue.WordString,
     'port-mirror':                TValue.WordString,
+    # palo alto specific
+    'profile-settings':           TListStrCollapsible,
     # srx specific                
     'destination-zone':           TListStrCollapsible,
     'source-zone':                TListStrCollapsible,
@@ -511,6 +523,7 @@ BUILTIN_SPEC: "dict[str, TValue | TComposition]" = {
     'platform-exclude':           TListStrCollapsible,
     'target-resources':           TList(of=TValue.TargetResourceTuple),
     'target-service-accounts':    TListStrCollapsible,
+    'tags':                       TListStrCollapsible,
     'timeout':                    TValue.Integer,
     # fmt: on
 }
@@ -582,11 +595,13 @@ class _Builtin:
         'priority':                   (_CallType.SingleValue,  VarType.PRIORITY),
         'qos':                        (_CallType.SingleValue,  VarType.QOS),
         'packet-length':              (_CallType.SingleValue,  VarType.PACKET_LEN),
+        'profile-settings':           (_CallType.SingleList,  VarType.PROFILE_SETTINGS),
         'fragment-offset':            (_CallType.SingleValue,  VarType.FRAGMENT_OFFSET),
         'hop-limit':                  (_CallType.SingleValue,  VarType.HOP_LIMIT),
         'source-interface':           (_CallType.SingleValue,  VarType.SINTERFACE),
         'destination-interface':      (_CallType.SingleValue,  VarType.DINTERFACE),
         'timeout':                    (_CallType.SingleValue,  VarType.TIMEOUT),
+        'tags':                       (_CallType.SingleList,  VarType.TAG),
         'dscp-set':                   (_CallType.SingleValue,  VarType.DSCP_SET),
         'ttl':                        (_CallType.SingleValue,  VarType.TTL),
         'filter-term':                (_CallType.SingleValue,  VarType.FILTER_TERM),
@@ -634,13 +649,13 @@ class _Builtin:
     }
     # fmt: on
 
-    def __init__(self, keyname: str, call_convention: _CallType, var_type: VarType):
+    def __init__(self, keyname: str, call_convention: _CallType, var_type: VarType) -> None:
         self.keyname = keyname
         self.call_convention = call_convention
         self.var_type = var_type
 
     @classmethod
-    def FromKeyword(cls, keyname: str):
+    def FromKeyword(cls, keyname: str) -> "_Builtin":
         """Construct a Builtin instance from keyname.
 
         Args:
@@ -655,11 +670,11 @@ class _Builtin:
         return cls(keyname, *cls.BUILTINS[keyname])
 
     @property
-    def recognizer(self) -> "TValue | TComposition":
+    def recognizer(self) -> TValue | TComposition:
         """The recognizer specific to this Builtin instance."""
         return BUILTIN_SPEC[self.keyname]
 
-    def AddObjectCallSequence(self, value: typing.Any):
+    def AddObjectCallSequence(self, value: Any):
         """Construct a calling sequence for Term.AddObject or Header.AddObject for
         this builtin type.
 
@@ -782,7 +797,7 @@ class BuiltinRecognizer:
         return RecognizerValueResult(recognized=True, valueKV={context.keyword: repr})
 
     @classmethod
-    def _NormalizeValues(cls, _context: RecognizerContext, repr: typing.Any) -> typing.Any:
+    def _NormalizeValues(cls, _context: RecognizerContext, repr: Any) -> Any:
         """Subclasses of BuiltinRecognizer can implement this method to adjust the output
         of recognizeKeywordValue.
 
@@ -856,6 +871,7 @@ class TermBuiltinRecognizer(BuiltinRecognizer):
             'ttl',
             'verbatim',
             'packet-length',
+            'profile-settings',
             'fragment-offset',
             'hop-limit',
             'icmp-type',
@@ -874,6 +890,7 @@ class TermBuiltinRecognizer(BuiltinRecognizer):
             'port-mirror',
             'destination-zone',
             'source-zone',
+            'tags',
             'vpn',
             'source-tag',
             'destination-tag',

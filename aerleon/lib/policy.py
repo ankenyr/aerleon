@@ -13,8 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-"""Parses the generic policy files and return a policy object for acl rendering.
-"""
+"""Parses the generic policy files and return a policy object for acl rendering."""
 
 from __future__ import annotations
 
@@ -23,12 +22,11 @@ import logging
 import os
 import pathlib
 import sys
-from typing import TYPE_CHECKING, Any, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any
 
-from ply import lex, yacc
-from ply.lex import LexToken
-from ply.yacc import YaccProduction
-
+from aerleon._vendor.ply import lex, yacc
+from aerleon._vendor.ply.lex import LexToken
+from aerleon._vendor.ply.yacc import YaccProduction
 from aerleon.lib import nacaddr, naming
 from aerleon.lib.nacaddr import IPv4, IPv6
 
@@ -37,7 +35,7 @@ if TYPE_CHECKING:
 
 DEFINITIONS = None
 DEFAULT_DEFINITIONS = './def'
-ACTIONS = set(('accept', 'count', 'deny', 'reject', 'next', 'reject-with-tcp-rst'))
+ACTIONS = {'accept', 'count', 'deny', 'reject', 'next', 'reject-with-tcp-rst'}
 PROTOS_WITH_PORTS = frozenset(('tcp', 'udp', 'udplite', 'sctp'))
 FLEXIBLE_MATCH_RANGE_ATTRIBUTES = {
     'byte-offset',
@@ -49,11 +47,12 @@ FLEXIBLE_MATCH_RANGE_ATTRIBUTES = {
     'flexible-range-name',
 }
 FLEXIBLE_MATCH_START_OPTIONS = {'layer-3', 'layer-4', 'payload'}
-_LOGGING = set(('true', 'True', 'syslog', 'local', 'disable', 'log-both'))
+_LOGGING = {'true', 'True', 'syslog', 'local', 'disable', 'log-both'}
 _OPTIMIZE = True
 _SHADE_CHECK = False
 _MAX_TTL = 255
 _MIN_TTL = 0
+ADDRESSBOOK_PLATFORMS = frozenset(['srx', 'fortigate'])
 
 
 class Error(Exception):
@@ -145,8 +144,8 @@ class InvalidNumericProtoValue(Error):
 
 
 def TranslatePorts(
-    ports: List[str], protocols: List[str], term_name: str
-) -> List[Tuple[int, int]]:
+    ports: list[str], protocols: list[str], term_name: str
+) -> list[tuple[int, int]]:
     """Return all ports of all protocols requested.
 
     Args:
@@ -166,13 +165,8 @@ def TranslatePorts(
             service_by_proto = DEFINITIONS.GetServiceByProto(port, proto)
             if not service_by_proto:
                 logging.warning(
-                    'Term %s has service %s which is not defined with '
-                    'protocol %s, but will be permitted. Unless intended'
-                    ', you should consider splitting the protocols '
-                    'into separate terms!',
-                    term_name,
-                    port,
-                    proto,
+                    f'Term {term_name} has service {port} which is not defined with protocol {proto}, but will be matched. '
+                    'Unless intended, you should consider splitting the protocols into separate terms!'
                 )
 
             for p in [x.split('-') for x in service_by_proto]:
@@ -187,7 +181,7 @@ def TranslatePorts(
 class Policy:
     """The policy object contains everything found in a given policy file."""
 
-    def __init__(self, header: Header, terms: Optional[List[Term]]) -> None:
+    def __init__(self, header: Header, terms: list[Term] | None) -> None:
         """Initiator for the Policy object.
 
         Args:
@@ -205,14 +199,14 @@ class Policy:
         self.filename = ''
         self.AddFilter(header, terms)
 
-    def AddFilter(self, header: Header, terms: Optional[List[Term]]) -> None:
+    def AddFilter(self, header: Header, terms: list[Term] | None) -> None:
         """Add another header & filter."""
         self.filters.append((header, terms))
         self._TranslateTerms(terms)
         if _SHADE_CHECK:
             self._DetectShading(terms)
 
-    def _TranslateTerms(self, terms: Optional[List[Term]]) -> None:
+    def _TranslateTerms(self, terms: list[Term] | None) -> None:
         """."""
         if not terms:
             raise NoTermsError('no terms found')
@@ -225,13 +219,13 @@ class Policy:
                 term.port = TranslatePorts(term.port, term.protocol, term.name)
                 if not term.port:
                     raise TermPortProtocolError(
-                        'no ports of the correct protocol for term %s' % (term.name)
+                        f'no ports of the correct protocol for term {term.name}'
                     )
             if term.source_port:
                 term.source_port = TranslatePorts(term.source_port, term.protocol, term.name)
                 if not term.source_port:
                     raise TermPortProtocolError(
-                        'no source ports of the correct protocol for term %s' % (term.name)
+                        f'no source ports of the correct protocol for term {term.name}'
                     )
             if term.destination_port:
                 term.destination_port = TranslatePorts(
@@ -239,7 +233,7 @@ class Policy:
                 )
                 if not term.destination_port:
                     raise TermPortProtocolError(
-                        'no destination ports of the correct protocol for term %s' % (term.name)
+                        f'no destination ports of the correct protocol for term {term.name}'
                     )
 
             # If argument is true, we optimize, otherwise just sort addresses
@@ -252,7 +246,7 @@ class Policy:
         for header in self.headers:
             if not header:
                 continue
-            if 'srx' in header.platforms:
+            if any(ADDRESSBOOK_PLATFORMS.intersection(header.platforms)):
                 return True
             for target in header.target:
                 opts = header.FilterOptions(target.platform)
@@ -261,7 +255,7 @@ class Policy:
         return False
 
     @property
-    def headers(self) -> List[Header]:
+    def headers(self) -> list[Header]:
         """Returns the headers from each of the configured filters.
 
         Returns:
@@ -269,7 +263,7 @@ class Policy:
         """
         return [x[0] for x in self.filters]
 
-    def _DetectShading(self, terms: List[Term]) -> None:
+    def _DetectShading(self, terms: list[Term]) -> None:
         """Finds terms which are shaded (impossible to reach).
 
         Iterate through each term, looking at each prior term. If a prior term
@@ -304,7 +298,7 @@ class Policy:
 
     def __str__(self) -> str:
         def tuple_str(tup):
-            return '%s:%s' % (tup[0], tup[1])
+            return f'{tup[0]}:{tup[1]}'
 
         return 'Policy: {%s}' % ', '.join(map(tuple_str, self.filters))
 
@@ -348,6 +342,7 @@ class Term:
       port-mirror: VarType.PORT_MIRROR
       qos: VarType.QOS
       pan-application: VarType.PAN_APPLICATION
+      profile-settings: VarType.PROFILE_SETTINGS
       policer: VarType.POLICER
       priority: VarType.PRIORITY
       destination-zone: VarType.DZONE
@@ -422,7 +417,7 @@ class Term:
     _IPV4_BYTE_SIZE = 1
     _IPV6_BYTE_SIZE = 4
 
-    def __init__(self, obj: Union[VarType, List[VarType]]) -> None:
+    def __init__(self, obj: VarType | list[VarType]) -> None:
         self.name = None
 
         self.action = []
@@ -453,6 +448,7 @@ class Term:
         self.protocol_except = []
         self.qos = None
         self.pan_application = []
+        self.profile_settings = []
         self.routing_instance = None
         self.source_address = []
         self.source_address_exclude = []
@@ -502,6 +498,8 @@ class Term:
         self.flattened_saddr = None
         self.flattened_daddr = None
         self.stateless_reply = False
+        # palo alto specific
+        self.tag = []
 
         # AddObject touches variables which might not have been initialized
         # further up so this has to be at the end.
@@ -706,13 +704,13 @@ class Term:
 
     def __str__(self) -> str:
         ret_str = []
-        ret_str.append(' name: %s' % self.name)
+        ret_str.append(f' name: {self.name}')
         if self.address:
-            ret_str.append('  address: %s' % sorted(self.address))
+            ret_str.append(f'  address: {sorted(self.address)}')
         if self.address_exclude:
-            ret_str.append('  address_exclude: %s' % sorted(self.address_exclude))
+            ret_str.append(f'  address_exclude: {sorted(self.address_exclude)}')
         if self.source_address:
-            ret_str.append('  source_address: %s' % self._SortAddressesByFamily('source_address'))
+            ret_str.append(f"  source_address: {self._SortAddressesByFamily('source_address')}")
         if self.source_address_exclude:
             ret_str.append(
                 '  source_address_exclude: %s'
@@ -721,10 +719,10 @@ class Term:
         if self.source_fqdn:
             ret_str.append(f'  source_fqdn: {self.source_fqdn}')
         if self.source_tag:
-            ret_str.append('  source_tag: %s' % self.source_tag)
+            ret_str.append(f'  source_tag: {self.source_tag}')
         if self.destination_address:
             ret_str.append(
-                '  destination_address: %s' % self._SortAddressesByFamily('destination_address')
+                f"  destination_address: {self._SortAddressesByFamily('destination_address')}"
             )
         if self.destination_address_exclude:
             ret_str.append(
@@ -734,93 +732,95 @@ class Term:
         if self.destination_fqdn:
             ret_str.append(f'  destination_fqdn: {self.destination_fqdn}')
         if self.destination_tag:
-            ret_str.append('  destination_tag: %s' % self.destination_tag)
+            ret_str.append(f'  destination_tag: {self.destination_tag}')
         if self.target_resources:
-            ret_str.append('  target_resources: %s' % self.target_resources)
+            ret_str.append(f'  target_resources: {self.target_resources}')
         if self.target_service_accounts:
-            ret_str.append('  target_service_accounts: %s' % self.target_service_accounts)
+            ret_str.append(f'  target_service_accounts: {self.target_service_accounts}')
         if self.source_prefix:
-            ret_str.append('  source_prefix: %s' % self.source_prefix)
+            ret_str.append(f'  source_prefix: {self.source_prefix}')
         if self.source_prefix_except:
-            ret_str.append('  source_prefix_except: %s' % self.source_prefix_except)
+            ret_str.append(f'  source_prefix_except: {self.source_prefix_except}')
         if self.destination_prefix:
-            ret_str.append('  destination_prefix: %s' % self.destination_prefix)
+            ret_str.append(f'  destination_prefix: {self.destination_prefix}')
         if self.destination_prefix_except:
-            ret_str.append('  destination_prefix_except: %s' % self.destination_prefix_except)
+            ret_str.append(f'  destination_prefix_except: {self.destination_prefix_except}')
         if self.filter_term:
-            ret_str.append('  filter_term: %s' % self.filter_term)
+            ret_str.append(f'  filter_term: {self.filter_term}')
         if self.forwarding_class:
-            ret_str.append('  forwarding_class: %s' % self.forwarding_class)
+            ret_str.append(f'  forwarding_class: {self.forwarding_class}')
         if self.forwarding_class_except:
-            ret_str.append('  forwarding_class_except: %s' % self.forwarding_class_except)
+            ret_str.append(f'  forwarding_class_except: {self.forwarding_class_except}')
         if self.icmp_type:
-            ret_str.append('  icmp_type: %s' % sorted(self.icmp_type))
+            ret_str.append(f'  icmp_type: {sorted(self.icmp_type)}')
         if self.icmp_code:
-            ret_str.append('  icmp_code: %s' % sorted(self.icmp_code))
+            ret_str.append(f'  icmp_code: {sorted(self.icmp_code)}')
         if self.next_ip:
-            ret_str.append('  next_ip: %s' % self.next_ip)
+            ret_str.append(f'  next_ip: {self.next_ip}')
         if self.encapsulate:
-            ret_str.append('  encapsulate: %s' % self.encapsulate)
+            ret_str.append(f'  encapsulate: {self.encapsulate}')
         if self.protocol:
-            ret_str.append('  protocol: %s' % sorted(self.protocol))
+            ret_str.append(f'  protocol: {sorted(self.protocol)}')
         if self.protocol_except:
-            ret_str.append('  protocol-except: %s' % self.protocol_except)
+            ret_str.append(f'  protocol-except: {self.protocol_except}')
         if self.owner:
-            ret_str.append('  owner: %s' % self.owner)
+            ret_str.append(f'  owner: {self.owner}')
         if self.port:
-            ret_str.append('  port: %s' % sorted(self.port))
+            ret_str.append(f'  port: {sorted(self.port)}')
         if self.port_mirror:
-            ret_str.append('  port_mirror: %s' % self.port_mirror)
+            ret_str.append(f'  port_mirror: {self.port_mirror}')
         if self.source_port:
-            ret_str.append('  source_port: %s' % sorted(self.source_port))
+            ret_str.append(f'  source_port: {sorted(self.source_port)}')
         if self.destination_port:
-            ret_str.append('  destination_port: %s' % sorted(self.destination_port))
+            ret_str.append(f'  destination_port: {sorted(self.destination_port)}')
         if self.action:
-            ret_str.append('  action: %s' % self.action)
+            ret_str.append(f'  action: {self.action}')
         if self.option:
-            ret_str.append('  option: %s' % self.option)
+            ret_str.append(f'  option: {self.option}')
         if self.flexible_match_range:
-            ret_str.append('  flexible_match_range: %s' % self.flexible_match_range)
+            ret_str.append(f'  flexible_match_range: {self.flexible_match_range}')
         if self.qos:
-            ret_str.append('  qos: %s' % self.qos)
+            ret_str.append(f'  qos: {self.qos}')
         if self.pan_application:
-            ret_str.append('  pan_application: %s' % self.pan_application)
+            ret_str.append(f'  pan_application: {self.pan_application}')
+        if self.profile_settings:
+            ret_str.append(f'  profile_settings: {self.profile_settings}')
         if self.logging:
-            ret_str.append('  logging: %s' % self.logging)
+            ret_str.append(f'  logging: {self.logging}')
         if self.log_limit:
-            ret_str.append('  log_limit: %s/%s' % (self.log_limit[0], self.log_limit[1]))
+            ret_str.append(f'  log_limit: {self.log_limit[0]}/{self.log_limit[1]}')
         if self.log_name:
-            ret_str.append('  log_name: %s' % self.log_name)
+            ret_str.append(f'  log_name: {self.log_name}')
         if self.priority:
-            ret_str.append('  priority: %s' % self.priority)
+            ret_str.append(f'  priority: {self.priority}')
         if self.counter:
-            ret_str.append('  counter: %s' % self.counter)
+            ret_str.append(f'  counter: {self.counter}')
         if self.traffic_class_count:
-            ret_str.append('  traffic_class_count: %s' % self.traffic_class_count)
+            ret_str.append(f'  traffic_class_count: {self.traffic_class_count}')
         if self.source_interface:
-            ret_str.append('  source_interface: %s' % self.source_interface)
+            ret_str.append(f'  source_interface: {self.source_interface}')
         if self.destination_interface:
-            ret_str.append('  destination_interface: %s' % self.destination_interface)
+            ret_str.append(f'  destination_interface: {self.destination_interface}')
         if self.expiration:
-            ret_str.append('  expiration: %s' % self.expiration)
+            ret_str.append(f'  expiration: {self.expiration}')
         if self.platform:
-            ret_str.append('  platform: %s' % self.platform)
+            ret_str.append(f'  platform: {self.platform}')
         if self.platform_exclude:
-            ret_str.append('  platform_exclude: %s' % self.platform_exclude)
+            ret_str.append(f'  platform_exclude: {self.platform_exclude}')
         if self.ttl:
-            ret_str.append('  ttl: %s' % self.ttl)
+            ret_str.append(f'  ttl: {self.ttl}')
         if self.timeout:
-            ret_str.append('  timeout: %s' % self.timeout)
+            ret_str.append(f'  timeout: {self.timeout}')
         if self.vpn:
             vpn_name, pair_policy = self.vpn
             if pair_policy:
-                ret_str.append('  vpn: name = %s, pair_policy = %s' % (vpn_name, pair_policy))
+                ret_str.append(f'  vpn: name = {vpn_name}, pair_policy = {pair_policy}')
             else:
-                ret_str.append('  vpn: name = %s' % vpn_name)
+                ret_str.append(f'  vpn: name = {vpn_name}')
         if self.source_zone:
-            ret_str.append('  source_zone: %s' % sorted(self.source_zone))
+            ret_str.append(f'  source_zone: {sorted(self.source_zone)}')
         if self.destination_zone:
-            ret_str.append('  destination_zone: %s' % sorted(self.destination_zone))
+            ret_str.append(f'  destination_zone: {sorted(self.destination_zone)}')
 
         return '\n'.join(ret_str)
 
@@ -879,6 +879,10 @@ class Term:
         if sorted(self.pan_application) != sorted(other.pan_application):
             return False
 
+        # profile-settings
+        if sorted(self.profile_settings) != sorted(other.profile_settings):
+            return False
+
         # verbatim
         if self.verbatim != other.verbatim:
             return False
@@ -911,6 +915,8 @@ class Term:
         if self.qos != other.qos:
             return False
         if sorted(self.pan_application) != sorted(other.pan_application):
+            return False
+        if sorted(self.profile_settings) != sorted(other.profile_settings):
             return False
         if self.packet_length != other.packet_length:
             return False
@@ -987,7 +993,7 @@ class Term:
     def __ne__(self, other: Term) -> bool:
         return not self.__eq__(other)
 
-    def _SortAddressesByFamily(self, addr_type: str) -> List[Union[IPv4, IPv6]]:
+    def _SortAddressesByFamily(self, addr_type: str) -> list[IPv4 | IPv6]:
         """Provide the term address field to sort.
 
         Method will sort v4 and then concatenate sorted v6 addresses. This will
@@ -1008,7 +1014,7 @@ class Term:
         # Concatenate
         return sort_v4 + sort_v6
 
-    def AddressesByteLength(self, address_family: Tuple[int, int] = (4, 6)) -> int:
+    def AddressesByteLength(self, address_family: tuple[int, int] = (4, 6)) -> int:
         """Returns the byte length of all IP addresses in the term.
 
         This is used in the srx generator due to a address size limitation.
@@ -1071,9 +1077,7 @@ class Term:
             if mutate:
                 self.address = self.flattened_addr
 
-    def GetAddressOfVersion(
-        self, addr_type: str, af: Optional[int] = None
-    ) -> List[Union[IPv4, IPv6]]:
+    def GetAddressOfVersion(self, addr_type: str, af: int | None = None) -> list[IPv4 | IPv6]:
         """Returns addresses of the appropriate Address Family.
 
         Args:
@@ -1090,7 +1094,7 @@ class Term:
 
         return [x for x in getattr(self, addr_type) if x.version == af]
 
-    def AddObject(self, obj: Union[VarType, List[VarType]]) -> None:
+    def AddObject(self, obj: VarType | list[VarType]) -> None:
         """Add an object of unknown type to this term.
 
         Args:
@@ -1164,6 +1168,8 @@ class Term:
                     self.forwarding_class_except.append(x.value)
                 elif x.var_type is VarType.PAN_APPLICATION:
                     self.pan_application.append(x.value)
+                elif x.var_type is VarType.PROFILE_SETTINGS:
+                    self.profile_settings.append(x.value)
                 elif x.var_type is VarType.NEXT_IP:
                     self.next_ip = DEFINITIONS.GetNetAddr(x.value)
                 elif x.var_type is VarType.PLATFORM:
@@ -1174,10 +1180,14 @@ class Term:
                     self.dscp_match.append(x.value)
                 elif x.var_type is VarType.DSCP_EXCEPT:
                     self.dscp_except.append(x.value)
+                elif x.var_type is VarType.LOGGING:
+                    self.logging.append(x)
                 elif x.var_type is VarType.STAG:
                     self.source_tag.append(x.value)
                 elif x.var_type is VarType.DTAG:
                     self.destination_tag.append(x.value)
+                elif x.var_type is VarType.TAG:
+                    self.tag.append(x.value)
                 elif x.var_type is VarType.FLEXIBLE_MATCH_RANGE:
                     self.flexible_match_range.append(x.value)
                 elif x.var_type is VarType.TARGET_RESOURCES:
@@ -1219,13 +1229,15 @@ class Term:
                 self.forwarding_class_except.append(obj.value)
             elif obj.var_type is VarType.PAN_APPLICATION:
                 self.pan_application.append(obj.value)
+            elif obj.var_type is VarType.PROFILE_SETTINGS:
+                self.profile_settings.append(obj.value)
             elif obj.var_type is VarType.NEXT_IP:
                 self.next_ip = DEFINITIONS.GetNetAddr(obj.value)
             elif obj.var_type is VarType.VERBATIM:
                 self.verbatim.append(obj.value)
             elif obj.var_type is VarType.ACTION:
                 if str(obj) not in ACTIONS:
-                    raise InvalidTermActionError('%s is not a valid action' % obj)
+                    raise InvalidTermActionError(f'{obj} is not a valid action')
                 self.action.append(obj.value)
             elif obj.var_type is VarType.COUNTER:
                 self.counter = obj
@@ -1240,9 +1252,13 @@ class Term:
             elif obj.var_type is VarType.ICMP_CODE:
                 self.icmp_code.extend(obj.value)
             elif obj.var_type is VarType.LOGGING:
+                # validate logging token and append
                 if str(obj) not in _LOGGING:
-                    raise InvalidTermLoggingError('%s is not a valid logging option' % obj)
+                    raise InvalidTermLoggingError(f'{obj} is not a valid logging option')
                 self.logging.append(obj)
+            elif obj.var_type is VarType.TAG:
+                # single-value form (accept but normalize to list)
+                self.tag.append(obj.value)
             elif obj.var_type is VarType.LOG_LIMIT:
                 self.log_limit = obj.value
             elif obj.var_type is VarType.LOG_NAME:
@@ -1280,7 +1296,7 @@ class Term:
             elif obj.var_type is VarType.FILTER_TERM:
                 self.filter_term = obj.value
             else:
-                raise TermObjectTypeError('%s isn\'t a type I know how to deal with' % (type(obj)))
+                raise TermObjectTypeError(f'{type(obj)} isn\'t a type I know how to deal with')
 
     def SanityCheck(self) -> None:
         """Sanity check the definition of the term.
@@ -1314,9 +1330,7 @@ class Term:
                 or self.protocol
                 or self.option
             ):
-                raise ParseError(
-                    'term "%s" has both verbatim and non-verbatim tokens.' % self.name
-                )
+                raise ParseError(f'term "{self.name}" has both verbatim and non-verbatim tokens.')
         else:
             if (
                 not self.action
@@ -1326,17 +1340,15 @@ class Term:
                 and not self.filter_term
                 and not self.port_mirror
             ):
-                raise TermNoActionError('no action specified for term %s' % self.name)
+                raise TermNoActionError(f'no action specified for term {self.name}')
             if self.filter_term and self.action:
                 raise InvalidTermActionError(
-                    'term "%s" has both filter and action tokens.' % self.name
+                    f'term "{self.name}" has both filter and action tokens.'
                 )
             # have we specified a port with a protocol that doesn't support ports?
             protos_no_ports = {p for p in self.protocol if p not in PROTOS_WITH_PORTS}
-            if protos_no_ports != set() and (
-                self.source_port or self.destination_port or self.port
-            ):
-                if set(self.protocol) - protos_no_ports != set():
+            if protos_no_ports and (self.source_port or self.destination_port or self.port):
+                if set(self.protocol) - protos_no_ports:
                     # This is a more specific error - some protocols support, but not all
                     raise MixedPortandNonPortProtos(
                         'Term %s contains mixed uses of protocols with and without port '
@@ -1391,14 +1403,12 @@ class Term:
             for icmptype in self.icmp_type:
                 if icmptype not in self.ICMP_TYPE[4] and icmptype not in self.ICMP_TYPE[6]:
                     raise TermInvalidIcmpType(
-                        'Term %s contains an invalid icmp-type:' '%s' % (self.name, icmptype)
+                        f'Term {self.name} contains an invalid icmp-type:{icmptype}'
                     )
 
         if self.ttl:
             if not _MIN_TTL <= self.ttl <= _MAX_TTL:
-                raise InvalidTermTTLValue(
-                    'Term %s contains invalid TTL: %s' % (self.name, self.ttl)
-                )
+                raise InvalidTermTTLValue(f'Term {self.name} contains invalid TTL: {self.ttl}')
         for proto in self.protocol:
             if proto.isnumeric():
                 if int(proto) < 0 or 255 < int(proto):
@@ -1452,7 +1462,7 @@ class Term:
         if self.destination_port:
             self.destination_port = self.CollapsePortList(self.destination_port)
 
-    def CollapsePortList(self, ports: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+    def CollapsePortList(self, ports: list[tuple[int, int]]) -> list[tuple[int, int]]:
         """Given a list of ports, Collapse to the smallest required.
 
         Args:
@@ -1481,7 +1491,7 @@ class Term:
                 ret_ports.append(port)
         return ret_ports
 
-    def CheckProtocolIsContained(self, superset: List[str], subset: List[str]) -> bool:
+    def CheckProtocolIsContained(self, superset: list[str], subset: list[str]) -> bool:
         """Check if the given list of protocols is wholly contained.
 
         Args:
@@ -1503,8 +1513,8 @@ class Term:
 
     def CheckPortIsContained(
         self,
-        superset: List[Tuple[int, int]],
-        subset: List[Tuple[int, int]],
+        superset: list[tuple[int, int]],
+        subset: list[tuple[int, int]],
     ) -> bool:
         """Check if the given list of ports is wholly contained.
 
@@ -1531,7 +1541,7 @@ class Term:
         return True
 
     def CheckAddressIsContained(
-        self, superset: Optional[List[IPv4.IPv6]], subset: Optional[List[IPv4, IPv6]]
+        self, superset: list[IPv4.IPv6] | None, subset: list[IPv4, IPv6] | None
     ) -> bool:
         """Check if subset is wholey contained by superset.
 
@@ -1607,6 +1617,7 @@ class VarType:
     FORWARDING_CLASS = 43
     STAG = 44
     DTAG = 45
+    TAG = 69
     NEXT_IP = 46
     HOP_LIMIT = 47
     LOG_NAME = 48
@@ -1616,6 +1627,7 @@ class VarType:
     FORWARDING_CLASS_EXCEPT = 52
     TRAFFIC_CLASS_COUNT = 53
     PAN_APPLICATION = 54
+    PROFILE_SETTINGS = 70
     ICMP_CODE = 55
     PRIORITY = 56
     TTL = 57
@@ -1663,7 +1675,7 @@ class Header:
         self.apply_groups = []
         self.apply_groups_except = []
 
-    def AddObject(self, obj: Union[Target, VarType]) -> None:
+    def AddObject(self, obj: Target | VarType) -> None:
         """Add and object to the Header.
 
         Args:
@@ -1687,11 +1699,11 @@ class Header:
             raise RuntimeError('Unable to add object from header.')
 
     @property
-    def platforms(self) -> List[str]:
+    def platforms(self) -> list[str]:
         """The platform targets of this particular header."""
         return [x.platform for x in self.target]
 
-    def FilterOptions(self, platform: str) -> List[str]:
+    def FilterOptions(self, platform: str) -> list[str]:
         """Given a platform return the options.
 
         Args:
@@ -1705,7 +1717,7 @@ class Header:
                 return target.options
         return []
 
-    def FilterName(self, platform: str) -> None:
+    def FilterName(self, platform: str) -> str | None:
         """Given a filter_type, return the filter name.
 
         Args:
@@ -1722,7 +1734,7 @@ class Header:
                 if target.options:
                     if platform in ['srx', 'paloalto']:
                         if len(target.options) >= 3:
-                            return '%s>%s' % (target.options[1], target.options[3])
+                            return f'{target.options[1]}>{target.options[3]}'
                         else:
                             return None
                     else:
@@ -1730,7 +1742,7 @@ class Header:
         return None
 
     def __str__(self) -> str:
-        return 'Target[%s], Comments [%s], Apply groups: [%s], except: [%s]' % (
+        return 'Target[{}], Comments [{}], Apply groups: [{}], except: [{}]'.format(
             ', '.join(map(str, self.target)),
             ', '.join(self.comment),
             ', '.join(self.apply_groups),
@@ -1772,7 +1784,7 @@ class Header:
 class Target:
     """The type of acl to be rendered from this policy file."""
 
-    def __init__(self, target: List[str]) -> None:
+    def __init__(self, target: list[str]) -> None:
         self.platform = target[0]
         self.options = target[1:]
 
@@ -1851,6 +1863,7 @@ class AerleonLexxer(object):
         'RPAREN',
         'RSQUARE',
         'PAN_APPLICATION',
+        'PROFILE_SETTINGS',
         'ROUTING_INSTANCE',
         'SADDR',
         'SADDREXCLUDE',
@@ -1860,6 +1873,7 @@ class AerleonLexxer(object):
         'SPORT',
         'SZONE',
         'STAG',
+        'TAGS',
         'STRING',
         'TARGET',
         'TARGET_RESOURCES',
@@ -1932,6 +1946,7 @@ class AerleonLexxer(object):
         'protocol-except': 'PROTOCOL_EXCEPT',
         'qos': 'QOS',
         'pan-application': 'PAN_APPLICATION',
+        'profile-settings': 'PROFILE_SETTINGS',
         'routing-instance': 'ROUTING_INSTANCE',
         'source-address': 'SADDR',
         'source-exclude': 'SADDREXCLUDE',
@@ -1940,6 +1955,7 @@ class AerleonLexxer(object):
         'source-prefix-except': 'ESPFX',
         'source-port': 'SPORT',
         'source-tag': 'STAG',
+        'tags': 'TAGS',
         'source-zone': 'SZONE',
         'target': 'TARGET',
         'target-resources': 'TARGET_RESOURCES',
@@ -1979,7 +1995,7 @@ class AerleonLexxer(object):
         t.lexer.lineno += len(t.value)
 
     def t_error(self, t):
-        print("Illegal character '%s' on line %s" % (t.value[0], t.lineno))
+        print(f"Illegal character '{t.value[0]}' on line {t.lineno}")
         t.lexer.skip(1)
 
     def t_DSCP_RANGE(self, t):
@@ -2119,6 +2135,7 @@ class AerleonParser(object):
         | term_spec protocol_spec
         | term_spec qos_spec
         | term_spec pan_application_spec
+        | term_spec profile_settings_spec
         | term_spec routinginstance_spec
         | term_spec term_zone_spec
         | term_spec tag_list_spec
@@ -2171,22 +2188,22 @@ class AerleonParser(object):
             return
 
         if p[1] not in FLEXIBLE_MATCH_RANGE_ATTRIBUTES:
-            raise FlexibleMatchError('%s is not a valid attribute' % p[1])
+            raise FlexibleMatchError(f'{p[1]} is not a valid attribute')
         if p[1] == 'match-start':
             if p[2] not in FLEXIBLE_MATCH_START_OPTIONS:
-                raise FlexibleMatchError('%s value is not valid' % p[1])
+                raise FlexibleMatchError(f'{p[1]} value is not valid')
         # per Juniper, max bit length is 32
         elif p[1] == 'bit-length':
             if int(p[2]) not in list(range(33)):
-                raise FlexibleMatchError('%s value is not valid' % p[1])
+                raise FlexibleMatchError(f'{p[1]} value is not valid')
         # per Juniper, max bit offset is 7
         elif p[1] == 'bit-offset':
             if int(p[2]) not in list(range(8)):
-                raise FlexibleMatchError('%s value is not valid' % p[1])
+                raise FlexibleMatchError(f'{p[1]} value is not valid')
         # per Juniper, offset can be up to 256 bytes
         elif p[1] == 'byte-offset':
             if int(p[2]) not in list(range(256)):
-                raise FlexibleMatchError('%s value is not valid' % p[1])
+                raise FlexibleMatchError(f'{p[1]} value is not valid')
 
         if type(p[0]) == type([]):
             p[0].append([p.slice[1:]])
@@ -2235,7 +2252,7 @@ class AerleonParser(object):
         if len(p) == 5:
             p[0] = VarType(VarType.PACKET_LEN, str(p[4]))
         else:
-            p[0] = VarType(VarType.PACKET_LEN, str(p[4]) + '-' + str(p[6]))
+            p[0] = VarType(VarType.PACKET_LEN, f"{p[4]!s}-{p[6]!s}")
 
     def p_fragment_offset_spec(self, p):
         """fragment_offset_spec : FRAGMENT_OFFSET ':' ':' INTEGER
@@ -2243,7 +2260,7 @@ class AerleonParser(object):
         if len(p) == 5:
             p[0] = VarType(VarType.FRAGMENT_OFFSET, str(p[4]))
         else:
-            p[0] = VarType(VarType.FRAGMENT_OFFSET, str(p[4]) + '-' + str(p[6]))
+            p[0] = VarType(VarType.FRAGMENT_OFFSET, f"{p[4]!s}-{p[6]!s}")
 
     def p_hop_limit_spec(self, p: YaccProduction) -> None:
         """hop_limit_spec : HOP_LIMIT ':' ':' INTEGER
@@ -2251,7 +2268,7 @@ class AerleonParser(object):
         if len(p) == 5:
             p[0] = VarType(VarType.HOP_LIMIT, str(p[4]))
         else:
-            p[0] = VarType(VarType.HOP_LIMIT, str(p[4]) + '-' + str(p[6]))
+            p[0] = VarType(VarType.HOP_LIMIT, f"{p[4]!s}-{p[6]!s}")
 
     def p_one_or_more_dscps(self, p):
         """one_or_more_dscps : one_or_more_dscps DSCP_RANGE
@@ -2351,13 +2368,16 @@ class AerleonParser(object):
 
     def p_tag_list_spec(self, p: YaccProduction) -> None:
         """tag_list_spec : DTAG ':' ':' one_or_more_strings
-        | STAG ':' ':' one_or_more_strings"""
+        | STAG ':' ':' one_or_more_strings
+        | TAGS ':' ':' one_or_more_strings"""
         p[0] = []
         for tag in p[4]:
             if p[1].find('source-tag') >= 0:
                 p[0].append(VarType(VarType.STAG, tag))
             elif p[1].find('destination-tag') >= 0:
                 p[0].append(VarType(VarType.DTAG, tag))
+            else:
+                p[0].append(VarType(VarType.TAG, tag))
 
     def p_target_resources_spec(self, p: YaccProduction) -> None:
         """target_resources_spec : TARGET_RESOURCES ':' ':' one_or_more_tuples"""
@@ -2461,6 +2481,12 @@ class AerleonParser(object):
         p[0] = []
         for apps in p[4]:
             p[0].append(VarType(VarType.PAN_APPLICATION, apps))
+
+    def p_profile_settings_spec(self, p):
+        """profile_settings_spec : PROFILE_SETTINGS ':' ':' one_or_more_strings"""
+        p[0] = []
+        for ps in p[4]:
+            p[0].append(VarType(VarType.PROFILE_SETTINGS, ps))
 
     def p_interface_spec(self, p: YaccProduction) -> None:
         """interface_spec : SINTERFACE ':' ':' STRING
@@ -2619,16 +2645,16 @@ def _ReadFile(filename):
     logging.debug('ReadFile(%s)', filename)
     if os.path.exists(filename):
         try:
-            with open(filename, 'r') as f:
+            with open(filename) as f:
                 data = f.read()
             return data
-        except IOError:
-            raise FileReadError('Unable to open or read file %s' % filename)
+        except OSError:
+            raise FileReadError(f'Unable to open or read file {filename}')
     else:
-        raise FileNotFoundError('Unable to open policy file %s' % filename)
+        raise FileNotFoundError(f'Unable to open policy file {filename}')
 
 
-def _Preprocess(data: str, max_depth: int = 5, base_dir: str = '') -> List[str]:
+def _Preprocess(data: str, max_depth: int = 5, base_dir: str = '') -> list[str]:
     """Search input for include statements and import specified include file.
 
     Search input for include statements and if found, import specified file
@@ -2676,7 +2702,7 @@ def _Preprocess(data: str, max_depth: int = 5, base_dir: str = '') -> List[str]:
     return rval
 
 
-def _SubpathOf(parent: str, subpath: Union[str, pathlib.PosixPath]) -> bool:
+def _SubpathOf(parent: str, subpath: str | pathlib.Path) -> bool:
     return str(pathlib.Path(subpath).resolve()).startswith(str(pathlib.Path(parent).resolve()))
 
 
@@ -2704,7 +2730,7 @@ def ParseFile(filename, definitions=None, optimize=True, base_dir='', shade_chec
 
 def ParsePolicy(
     data: str,
-    definitions: naming.Naming = None,
+    definitions: naming.Naming | None = None,
     optimize: bool = True,
     base_dir: str = '',
     shade_check: bool = False,
@@ -2759,9 +2785,9 @@ if __name__ == '__main__':
     ret = 0
     if len(sys.argv) > 1:
         try:
-            ret = ParsePolicy(open(sys.argv[1], 'r').read(), filename=sys.argv[1])
-        except IOError:
-            print('ERROR: \'%s\' either does not exist or is not readable' % (sys.argv[1]))
+            ret = ParsePolicy(open(sys.argv[1]).read(), filename=sys.argv[1])
+        except OSError:
+            print(f'ERROR: \'{sys.argv[1]}\' either does not exist or is not readable')
             ret = 1
     else:
         # default to reading stdin

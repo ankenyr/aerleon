@@ -19,21 +19,24 @@ import copy
 import logging
 import logging.config
 import logging.handlers
-import multiprocessing
+import multiprocessing.context
+import multiprocessing.managers
+import multiprocessing.pool
 import pathlib
 import sys
-from multiprocessing import Event, Process, Queue, current_process
-from typing import Iterator, List, Tuple
+import typing
+from collections.abc import Iterator
+from multiprocessing import Event, Process, Queue
 
 from absl import app, flags
 
 from aerleon.lib import aclgenerator
 from aerleon.lib import logging as aerleon_logger
-from aerleon.lib import naming, plugin_supervisor, policy, yaml
+from aerleon.lib import naming, pcap, plugin_supervisor, policy, yaml
 from aerleon.utils import config
 
 FLAGS = flags.FLAGS
-WriteList = List[Tuple[pathlib.Path, str]]
+WriteList = typing.MutableSequence[tuple[pathlib.Path, str]]
 
 
 def SetupFlags():
@@ -62,7 +65,7 @@ def SetupFlags():
     flags.DEFINE_boolean(
         'optimize',
         None,
-        'Turn on optimization.\nDefault: \'%s\'' % config.defaults['optimize'],
+        f"Turn on optimization.\nDefault: '{config.defaults['optimize']}'",
         short_name='o',
     )
     flags.DEFINE_boolean(
@@ -74,7 +77,7 @@ def SetupFlags():
     flags.DEFINE_boolean(
         'debug',
         None,
-        'Display detailed messages.\nDefault: \'%s\'' % str(config.defaults['debug']).lower(),
+        f"Display detailed messages.\nDefault: '{str(config.defaults['debug']).lower()}'",
     )
     flags.DEFINE_boolean('verbose', None, 'UNUSED. Use --debug instead.')
     flags.DEFINE_list(
@@ -120,21 +123,6 @@ class ACLParserError(Error):
     """Raised when the ACL parser fails."""
 
 
-def SkipLines(text, skip_line_func=False):
-    """Apply skip_line_func to the given text.
-
-    Args:
-      text: list of the first text to scan
-      skip_line_func: function to use to check if we should skip a line
-
-    Returns:
-      ret_text: text(list) minus the skipped lines
-    """
-    if not skip_line_func:
-        return text
-    return [x for x in text if not skip_line_func(x)]
-
-
 def RenderFile(
     base_directory: str,
     input_file: pathlib.Path,
@@ -171,40 +159,12 @@ def RenderFile(
     logging.debug('rendering file: %s into %s', input_file, output_directory)
 
     pol = None
-    jcl = False
-    evojcl = False
-    acl = False
-    atp = False
-    asacl = False
-    aacl = False
-    bacl = False
-    eacl = False
-    gca = False
-    gcefw = False
-    gcphf = False
-    ips = False
-    ipt = False
-    msmpc = False
-    spd = False
-    nsx = False
-    oc = False
-    pcap_accept = False
-    pcap_deny = False
-    pf = False
-    srx = False
-    jsl = False
-    nft = False
-    win_afw = False
-    nxacl = False
-    xacl = False
-    paloalto = False
-    k8s_pol = False
 
     try:
         with open(input_file) as f:
             conf = f.read()
             logging.debug('opened and read %s', input_file)
-    except IOError as e:
+    except OSError as e:
         logging.warning('bad file: \n%s', e)
         raise
 
@@ -236,9 +196,7 @@ def RenderFile(
             % (input_file, sys.exc_info()[0], sys.exc_info()[1])
         ) from e
 
-    platforms = set()
-    for header in pol.headers:
-        platforms.update(header.platforms)
+    platforms = {platform for header in pol.headers for platform in header.platforms}
 
     acl_obj: aclgenerator.ACLGenerator
     plugin_supervisor.PluginSupervisor.Start()
@@ -252,10 +210,11 @@ def RenderFile(
         try:
             # special handling for pcap
             if target == 'pcap':
+                assert issubclass(generator, pcap.PcapFilter)
                 acl_obj = generator(copy.deepcopy(pol), exp_info)
                 RenderACL(
                     str(acl_obj),
-                    '-accept' + acl_obj.SUFFIX,
+                    f"-accept{acl_obj.SUFFIX}",
                     output_directory,
                     input_file,
                     write_files,
@@ -263,7 +222,7 @@ def RenderFile(
                 acl_obj = generator(copy.deepcopy(pol), exp_info, invert=True)
                 RenderACL(
                     str(acl_obj),
-                    '-deny' + acl_obj.SUFFIX,
+                    f"-deny{acl_obj.SUFFIX}",
                     output_directory,
                     input_file,
                     write_files,
@@ -273,9 +232,7 @@ def RenderFile(
                 RenderACL(str(acl_obj), acl_obj.SUFFIX, output_directory, input_file, write_files)
 
         except aclgenerator.Error as e:
-            raise ACLGeneratorError(
-                'Error generating target ACL for %s:\n%s' % (input_file, e)
-            ) from e
+            raise ACLGeneratorError(f'Error generating target ACL for {input_file}:\n{e}') from e
 
 
 def RenderACL(
@@ -283,7 +240,7 @@ def RenderACL(
     acl_suffix: str,
     output_directory: pathlib.Path,
     input_file: pathlib.Path,
-    write_files: List[Tuple[pathlib.Path, str]],
+    write_files: typing.MutableSequence[tuple[pathlib.Path, str]],
     binary: bool = False,
 ):
     """Write the ACL string out to file if appropriate.
@@ -324,7 +281,7 @@ def FilesUpdated(file_name: pathlib.Path, new_text: str, binary: bool) -> bool:
     try:
         with open(file_name, readmode) as f:
             conf: str = str(f.read())
-    except IOError:
+    except OSError:
         return True
     if not binary:
         p4_id = '$I d:'.replace(' ', '')
@@ -340,7 +297,7 @@ def FilesUpdated(file_name: pathlib.Path, new_text: str, binary: bool) -> bool:
     return conf != new_text
 
 
-def DescendDirectory(input_dirname: str, ignore_directories: List[str]) -> List[pathlib.Path]:
+def DescendDirectory(input_dirname: str, ignore_directories: list[str]) -> list[pathlib.Path]:
     """Descend from input_dirname looking for policy files to render.
 
     Args:
@@ -352,14 +309,14 @@ def DescendDirectory(input_dirname: str, ignore_directories: List[str]) -> List[
     """
     input_dir = pathlib.Path(input_dirname)
 
-    policy_files: List[pathlib.Path] = []
+    policy_files: list[pathlib.Path] = []
     policy_directories: Iterator[pathlib.Path] = filter(
         lambda path: path.is_dir(), input_dir.glob('**/pol')
     )
     for ignored_directory in ignore_directories:
 
         def Filtering(path, ignored=ignored_directory):
-            return not path.match('%s/**/pol' % ignored) and not path.match('%s/pol' % ignored)
+            return not path.match(f'{ignored}/**/pol') and not path.match(f'{ignored}/pol')
 
         policy_directories = filter(Filtering, policy_directories)
 
@@ -373,7 +330,7 @@ def DescendDirectory(input_dirname: str, ignore_directories: List[str]) -> List[
         )
         depth = len(directory.parents) - 1
         logging.warning(
-            '-' * (2 * depth) + '> %s (%d pol files found)' % (directory, len(directory_policies))
+            f"{'-' * (2 * depth)}> {directory} ({len(directory_policies)} pol files found)"
         )
         policy_files.extend(filter(lambda path: path.is_file(), directory_policies))
 
@@ -408,7 +365,7 @@ def _WriteFile(output_file: pathlib.Path, file_contents: str):
         with open(output_file, 'w') as output:
             logging.info('writing file: %s', output_file)
             output.write(file_contents)
-    except IOError:
+    except OSError:
         logging.warning('error while writing file: %s', output_file)
         raise
 
@@ -438,7 +395,7 @@ def Run(
     output_directory: str,
     exp_info: int,
     max_renderers: int,
-    ignore_directories: List[str],
+    ignore_directories: list[str],
     optimize: bool,
     shade_check: bool,
     context: multiprocessing.context.BaseContext,
@@ -463,17 +420,14 @@ def Run(
     try:
         definitions = naming.Naming(definitions_directory)
     except naming.NoDefinitionsError:
-        err_msg = 'bad definitions directory: %s' % definitions_directory
+        err_msg = f'bad definitions directory: {definitions_directory}'
         logging.critical(err_msg)
         sys.exit(1)
-
-    # thead-safe list for storing files to write
-    manager: multiprocessing.managers.SyncManager = context.Manager()
-    write_files: WriteList = manager.list()
 
     with_errors = False
     logging.info('finding policies...')
     if max_renderers == 1 or policy_file:
+        write_files: WriteList = []
         if policy_file:
             policies = [pathlib.Path(policy_file)]
         else:
@@ -494,12 +448,14 @@ def Run(
             with_errors = True
             logging.warning('\n\nerror encountered in rendering process:\n%s\n\n', e)
     else:
+        manager: multiprocessing.managers.SyncManager = context.Manager()
+        write_files: WriteList = manager.list()
         # render all files in parallel
         q = multiprocessing.Manager().Queue()
         log_level = logging.getLogger().getEffectiveLevel()
         policies = DescendDirectory(base_directory, ignore_directories)
         pool = context.Pool(processes=max_renderers)
-        results: List[multiprocessing.pool.AsyncResult] = []
+        results: list[multiprocessing.pool.AsyncResult] = []
         for pol in policies:
             results.append(
                 pool.apply_async(

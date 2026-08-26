@@ -371,6 +371,8 @@ A Term must contain a `name` field naming the term.
 | terms[].qos                       | Juniper    | word                         | `qos: "[TRAFFIC_CLASS]"`                                                                                   |
 | terms[].pan-application           | PaloAltoFW | list of words                | `pan-application: "[APPLICATION_NAME] ..."`                                                                |
 | terms[].pan-application           | PaloAltoFW | list of words                | `pan-application: ["[APPLICATION_NAME]", ...]`                                                             |
+| terms[].profile-settings          | PaloAltoFW | list of words                | `profile-settings: ["[NAME]", ...]`                                                             |
+| terms[].profile-settings          | PaloAltoFW | list of words                | `profile-settings: ["[NAME]", ...]`                                                             |
 | terms[].routing-instance          |            | word                         | `routing-instance: "[ROUTING_INSTANCE_NAME]"`                                                              |
 | terms[].source-address            |            | list of words                | `source-address: "[IP \| CIDR \| NAME] ..."`                                                               |
 | terms[].source-address            |            | list of words                | `source-address: ["[IP \| CIDR \| NAME]", ...]`                                                            |
@@ -429,6 +431,7 @@ A Term must contain a `name` field naming the term.
 | terms[].platform-exclude          |            | list of words                | `platform-exclude: ["[TARGET_NAME]", ...]`                                                                 |
 | terms[].target-resources          | GCP        | list of tuples               | `target-resources: ["([PROJECT_NAME], [NETWORK_NAME])", ...]`                                              |
 | terms[].timeout                   |            | number                       | `timeout: "[NUMBER]"`                                                                                      |
+| terms[].tags                      | PaloAltoFW | list of words                | `source-tag: ["[TAG]", ...]`                                                                               |
 
 ### Value Types
 

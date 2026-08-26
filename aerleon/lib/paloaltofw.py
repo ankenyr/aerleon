@@ -14,12 +14,10 @@
 # limitations under the License.
 """Palo Alto Firewall generator."""
 
-import collections
 import copy
 import logging
 import re
 import xml.etree.ElementTree as etree
-from typing import Dict, List, Optional, Set, Tuple, Union
 from xml.dom import minidom
 
 from aerleon.lib import aclgenerator, addressbook, nacaddr, policy
@@ -75,10 +73,10 @@ class ServiceMap:
     def get_service_name(
         self,
         term_name: str,
-        src_ports: Tuple[str],
-        ports: Union[Tuple[str, str], Tuple[str]],
+        src_ports: tuple[str],
+        ports: tuple[str, str] | tuple[str],
         protocol: str,
-        prefix: Optional[str] = None,
+        prefix: str | None = None,
     ) -> str:
         """Returns service name based on the provided ports and protocol."""
         if (src_ports, ports, protocol) in self.entries:
@@ -86,11 +84,11 @@ class ServiceMap:
 
         if prefix is None:
             prefix = "service-"
-        service_name = "%s%s-%s" % (prefix, term_name, protocol)
+        service_name = f"{prefix}{term_name}-{protocol}"
 
         if len(service_name) > 63:
             raise PaloAltoFWNameTooLongError(
-                "Service name must be 63 characters max: %s" % service_name
+                f"Service name must be 63 characters max: {service_name}"
             )
 
         for _, service in self.entries.items():
@@ -129,7 +127,7 @@ class Rule:
     @staticmethod
     def TermToOptions(
         from_zone: str, to_zone: str, term: Term, service_map: ServiceMap
-    ) -> Tuple[Dict[str, Union[List[str], str]], Optional[Term]]:
+    ) -> tuple[dict[str, list[str] | str], Term | None]:
         """Convert term to Palo Alto security rule options."""
         options = {}
         options["from_zone"] = [from_zone]
@@ -140,6 +138,9 @@ class Rule:
         options["application"] = []
         options["service"] = []
         options["logging"] = []
+        # palo alto specific tag(s) for the term
+        options["tag"] = []
+        options["profile_setting"] = []
 
         ACTIONS = {
             "accept": "allow",
@@ -154,7 +155,7 @@ class Rule:
             x = []
             for tup in ports:
                 if len(tup) > 1 and tup[0] != tup[1]:
-                    x.append(str(tup[0]) + "-" + str(tup[1]))
+                    x.append(f"{tup[0]!s}-{tup[1]!s}")
                 else:
                     x.append(str(tup[0]))
 
@@ -178,21 +179,15 @@ class Rule:
 
         # SOURCE-ADDRESS
         if term.source_address:
-            saddr_check = set()
-            for saddr in term.source_address:
-                saddr_check.add(saddr.parent_token)
-            saddr_check = sorted(saddr_check)
-            for addr in saddr_check:
+            saddr_check = {saddr.parent_token for saddr in term.source_address}
+            for addr in sorted(saddr_check):
                 options["source"].append(str(addr))
         # missing source handled during XML document generation
 
         # DESTINATION-ADDRESS
         if term.destination_address:
-            daddr_check = set()
-            for daddr in term.destination_address:
-                daddr_check.add(daddr.parent_token)
-            daddr_check = sorted(daddr_check)
-            for addr in daddr_check:
+            daddr_check = {daddr.parent_token for daddr in term.destination_address}
+            for addr in sorted(daddr_check):
                 options["destination"].append(str(addr))
         # missing destination handled during XML document generation
 
@@ -206,6 +201,18 @@ class Rule:
         if term.pan_application:
             for pan_app in term.pan_application:
                 options["application"].append(pan_app)
+
+        # PROFILE-SETTINGS
+        if getattr(term, 'profile_settings', None):
+            for ps in term.profile_settings:
+                if ps and ps not in options["profile_setting"]:
+                    options["profile_setting"].append(ps)
+
+        # TERM TAGS
+        if getattr(term, 'tag', None):
+            for t in term.tag:
+                if t and t not in options["tag"]:
+                    options["tag"].append(t)
 
         if term.source_port or term.destination_port:
             src_ports = pan_ports(term.source_port)
@@ -254,7 +261,7 @@ class Rule:
                 ):
                     options["application"].append(proto_name)
                 elif proto_name in ("ah", "esp"):
-                    ipsec_app_proto = "ipsec-%s" % proto_name
+                    ipsec_app_proto = f"ipsec-{proto_name}"
                     if ipsec_app_proto not in options["application"]:
                         options["application"].append(ipsec_app_proto)
 
@@ -266,7 +273,7 @@ class PaloAltoFW(aclgenerator.ACLGenerator):
 
     _PLATFORM = "paloalto"
     SUFFIX = ".xml"
-    _SUPPORTED_AF = set(("inet", "inet6", "mixed"))
+    _SUPPORTED_AF = {"inet", "inet6", "mixed"}
     _AF_MAP = {"inet": (4,), "inet6": (6,), "mixed": (4, 6)}
     _TERM_MAX_LENGTH = 63
     _APPLICATION_NAME_MAX_LENGTH = 31
@@ -341,7 +348,7 @@ class PaloAltoFW(aclgenerator.ACLGenerator):
         self.service_map = ServiceMap()
         super().__init__(pol, exp_info)
 
-    def _BuildTokens(self) -> Tuple[Set[str], Dict[str, Set[str]]]:
+    def _BuildTokens(self) -> tuple[set[str], dict[str, set[str]]]:
         """Build supported tokens for platform.
 
         Returns:
@@ -363,6 +370,7 @@ class PaloAltoFW(aclgenerator.ACLGenerator):
             "owner",
             "platform",
             "platform_exclude",
+            "profile_settings",
             "protocol",
             "source_address",
             "source_address_exclude",
@@ -371,6 +379,7 @@ class PaloAltoFW(aclgenerator.ACLGenerator):
             "timeout",
             "pan_application",
             "translated",
+            "tag",
         }
 
         supported_sub_tokens.update(
@@ -401,7 +410,6 @@ class PaloAltoFW(aclgenerator.ACLGenerator):
           name.
         """
         first_addr_obj = None
-        address_book_dup_check = set()
 
         for header, terms in pol.filters:
             # The filter_options is a list of options from header, e.g.
@@ -501,7 +509,7 @@ class PaloAltoFW(aclgenerator.ACLGenerator):
                     )
                 term.name = self.FixTermLength(term.name)
                 if term.name in term_dup_check:
-                    raise PaloAltoFWDuplicateTermError("You have a duplicate term: %s" % term.name)
+                    raise PaloAltoFWDuplicateTermError(f"You have a duplicate term: {term.name}")
                 term_dup_check.add(term.name)
 
                 services = {"tcp", "udp"} & set(term.protocol)
@@ -724,7 +732,7 @@ class PaloAltoFW(aclgenerator.ACLGenerator):
                     # The term contains ICMP types
                     for term_icmp_type_name in term.icmp_type:
                         if icmp_version == "icmp":
-                            icmp_app_name = "icmp-%s" % term_icmp_type_name
+                            icmp_app_name = f"icmp-{term_icmp_type_name}"
                             # This is to abbreviate the Application name where possible.
                             # The limit is defined by _APPLICATION_NAME_MAX_LENGTH = 31.
                             if len(icmp_app_name) > self._APPLICATION_NAME_MAX_LENGTH:
@@ -738,7 +746,7 @@ class PaloAltoFW(aclgenerator.ACLGenerator):
                                 )
                             term_icmp_type = policy.Term.ICMP_TYPE[4][term_icmp_type_name]
                         else:
-                            icmp_app_name = "icmp6-%s" % term_icmp_type_name
+                            icmp_app_name = f"icmp6-{term_icmp_type_name}"
                             # This is to abbreviate the Application name where possible.
                             # The limit is defined by _APPLICATION_NAME_MAX_LENGTH = 31.
                             if len(icmp_app_name) > self._APPLICATION_NAME_MAX_LENGTH:
@@ -777,7 +785,7 @@ class PaloAltoFW(aclgenerator.ACLGenerator):
                     if proto_name in self._SUPPORTED_PROTO_NAMES:
                         continue
                     raise PaloAltoFWUnsupportedProtocolError(
-                        "protocol %s is not supported" % proto_name
+                        f"protocol {proto_name} is not supported"
                     )
 
                 if term.icmp_type:
@@ -814,7 +822,7 @@ class PaloAltoFW(aclgenerator.ACLGenerator):
 
             self.pafw_policies.append((header, ruleset, filter_options))
 
-    def _SortAddressBookNumCheck(self, item: str) -> Tuple[str, int]:
+    def _SortAddressBookNumCheck(self, item: str) -> tuple[str, int]:
         """Used to give a natural order to the list of acl entries.
 
         Args:
@@ -847,7 +855,7 @@ class PaloAltoFW(aclgenerator.ACLGenerator):
             if i[0] == i[1]:
                 port_list.append(str(i[0]))
             else:
-                port_list.append("%s-%s" % (str(i[0]), str(i[1])))
+                port_list.append(f"{str(i[0])}-{str(i[1])}")
         return port_list
 
     def __str__(self) -> str:
@@ -926,6 +934,7 @@ class PaloAltoFW(aclgenerator.ACLGenerator):
         security = etree.SubElement(rulebase, "security")
         rules = etree.SubElement(security, "rules")
         tag = etree.Element("tag")
+        tags_added = set()
 
         tag_num = 0
 
@@ -950,10 +959,19 @@ class PaloAltoFW(aclgenerator.ACLGenerator):
                             self._MAX_TAG_COMMENTS_LENGTH,
                         )
                     comments.text = comment[: self._MAX_TAG_COMMENTS_LENGTH]
+                    tags_added.add(tag_name)
 
             no_addr_obj = (
                 True if (len(filter_options) > 5 and filter_options[5] == "no-addr-obj") else False
             )
+
+            # Ensure any term-level tags are added to the global <tag> list
+            for _nm, _opts in pa_rules.items():
+                if _opts.get("tag"):
+                    for t in _opts.get("tag", []):
+                        if t and t not in tags_added:
+                            etree.SubElement(tag, "entry", {"name": t})
+                            tags_added.add(t)
 
             for name, options in pa_rules.items():
                 entry = etree.SubElement(rules, "entry", {"name": name})
@@ -1058,6 +1076,15 @@ class PaloAltoFW(aclgenerator.ACLGenerator):
                         member = etree.SubElement(service, "member")
                         member.text = x
 
+                # PROFILE-SETTINGS
+                if options.get("profile_setting"):
+                    ps = etree.SubElement(entry, "profile-setting")
+                    grp = etree.SubElement(ps, "group")
+                    for psm in options.get("profile_setting", []):
+                        if psm:
+                            m = etree.SubElement(grp, "member")
+                            m.text = psm
+
                 # ACTION
                 action = etree.SubElement(entry, "action")
                 action.text = options["action"]
@@ -1080,10 +1107,19 @@ class PaloAltoFW(aclgenerator.ACLGenerator):
                         member = etree.SubElement(app, "member")
                         member.text = x
 
+                # collect tags for this rule: header-generated tag_name and any term tags
+                tags_for_rule = []
                 if tag_name is not None:
+                    tags_for_rule.append(tag_name)
+                if options.get("tag"):
+                    for t in options.get("tag", []):
+                        if t:
+                            tags_for_rule.append(t)
+                if tags_for_rule:
                     rules_tag = etree.SubElement(entry, "tag")
-                    member = etree.SubElement(rules_tag, "member")
-                    member.text = tag_name
+                    for t in tags_for_rule:
+                        member = etree.SubElement(rules_tag, "member")
+                        member.text = t
 
                 # LOGGING
                 if options["logging"]:

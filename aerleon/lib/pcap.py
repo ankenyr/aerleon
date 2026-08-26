@@ -30,7 +30,6 @@ Stolen liberally from packetfilter.py.
 
 
 import logging
-from typing import Dict, List, Set, Tuple, Union
 
 from aerleon.lib import aclgenerator
 from aerleon.lib.nacaddr import IPv4, IPv6
@@ -201,7 +200,7 @@ class Term(aclgenerator.Term):
 
         return cond + '\n'
 
-    def _CheckAddressAf(self, addrs: List[Union[IPv4, IPv6]]) -> List[Union[str, IPv4, IPv6]]:
+    def _CheckAddressAf(self, addrs: list[IPv4 | IPv6]) -> list[str | IPv4 | IPv6]:
         """Verify that the requested address-family matches the address's family."""
         if not addrs:
             return ['any']
@@ -215,7 +214,7 @@ class Term(aclgenerator.Term):
         return af_addrs
 
     @staticmethod
-    def JoinConditionals(condition_list: List[str], operator: str) -> str:
+    def JoinConditionals(condition_list: list[str], operator: str) -> str:
         """Join conditionals using the specified operator.
 
         Filters out empty elements and blank strings.
@@ -233,23 +232,23 @@ class Term(aclgenerator.Term):
         if not condition_list:
             return ''
 
-        op = ' %s ' % (operator)
-        res = '(%s)' % (op.join(condition_list))
+        op = f' {operator} '
+        res = f'({op.join(condition_list)})'
         return res
 
     def _GenerateAddrStatement(
-        self, addrs: List[Union[str, IPv6, IPv4]], exclude_addrs: List[Union[str, IPv6, IPv4]]
+        self, addrs: list[str | IPv6 | IPv4], exclude_addrs: list[str | IPv6 | IPv4]
     ) -> str:
         addrlist = []
         for d in addrs:
             if d != 'any' and str(d) != '::/0':
-                addrlist.append('dst net %s' % (d))
+                addrlist.append(f'dst net {d}')
 
         excludes = []
         if exclude_addrs:
             for d in exclude_addrs:
                 if d != 'any' and str(d) != '::/0':
-                    excludes.append('not dst net %s' % (d))
+                    excludes.append(f'not dst net {d}')
                 else:
                     # excluding 'any' doesn't really make sense ...
                     return ''
@@ -262,22 +261,22 @@ class Term(aclgenerator.Term):
         else:
             return Term.JoinConditionals(addrlist, 'or')
 
-    def _GenerateProtoStatement(self, protocols: List[str]) -> str:
+    def _GenerateProtoStatement(self, protocols: list[str]) -> str:
         return Term.JoinConditionals([self._PROTO_TABLE[p] for p in protocols], 'or')
 
-    def _GeneratePortStatement(self, ports: List[Tuple[int, int]], direction: str) -> str:
+    def _GeneratePortStatement(self, ports: list[tuple[int, int]], direction: str) -> str:
         conditions = []
         # term.destination_port is a list of tuples containing the start and end
         # ports of the port range.  In the event it is a single port, the start
         # and end ports are the same.
         for port_tuple in ports:
             if port_tuple[0] == port_tuple[1]:
-                conditions.append('%s port %s' % (direction, port_tuple[0]))
+                conditions.append(f'{direction} port {port_tuple[0]}')
             else:
-                conditions.append('%s portrange %s-%s' % (direction, port_tuple[0], port_tuple[1]))
+                conditions.append(f'{direction} portrange {port_tuple[0]}-{port_tuple[1]}')
         return Term.JoinConditionals(conditions, 'or')
 
-    def _GenerateTcpOptions(self, options: List[str]) -> str:
+    def _GenerateTcpOptions(self, options: list[str]) -> str:
         opts = [str(x) for x in options]
         tcp_flags_set = []
         tcp_flags_check = []
@@ -294,13 +293,13 @@ class Term(aclgenerator.Term):
                         tcp_flags_set.append(self._TCP_FLAGS_TABLE.get(next_flag))
 
         if tcp_flags_check:
-            return '(tcp[tcpflags] & (%s) == (%s))' % (
+            return '(tcp[tcpflags] & ({}) == ({}))'.format(
                 '|'.join(tcp_flags_check),
                 '|'.join(tcp_flags_set),
             )
         return ''
 
-    def _GenerateIcmpType(self, icmp_types: List[int], icmp_code: List[int]) -> str:
+    def _GenerateIcmpType(self, icmp_types: list[int], icmp_code: list[int]) -> str:
         rtr_str = ''
         if icmp_types:
             code_strings = ['']
@@ -343,7 +342,7 @@ class PcapFilter(aclgenerator.ACLGenerator):
             del kwargs['invert']
         super().__init__(*args, **kwargs)
 
-    def _BuildTokens(self) -> Tuple[Set[str], Dict[str, Set[str]]]:
+    def _BuildTokens(self) -> tuple[set[str], dict[str, set[str]]]:
         """Build supported tokens for platform.
 
         Returns:
@@ -428,7 +427,7 @@ class PcapFilter(aclgenerator.ACLGenerator):
             for term in terms:
                 if term.name in term_names:
                     raise aclgenerator.DuplicateTermError(
-                        'You have a duplicate term: %s' % term.name
+                        f'You have a duplicate term: {term.name}'
                     )
 
                 if not term:
