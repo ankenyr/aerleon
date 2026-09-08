@@ -16,7 +16,6 @@
 
 """Juniper JCL generator."""
 
-
 import logging
 
 from aerleon.lib import aclgenerator, nacaddr, policy, summarizer

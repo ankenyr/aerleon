@@ -1801,7 +1801,7 @@ class Target:
         return not self.__eq__(other)
 
 
-class AerleonLexxer(object):
+class AerleonLexxer:
     tokens = (
         'ACTION',
         'ADDR',
@@ -2036,7 +2036,7 @@ class AerleonLexxer(object):
         return self.lexer.token()
 
 
-class AerleonParser(object):
+class AerleonParser:
     tokens = AerleonLexxer.tokens
 
     def __init__(self, lexer):

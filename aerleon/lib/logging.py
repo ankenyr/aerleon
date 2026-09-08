@@ -49,7 +49,7 @@ class LogHandler(logging.StreamHandler):
             logger = logging.getLogger(record.name)
 
         if logger.isEnabledFor(record.levelno):
-            record.processName = '%s (for %s)' % (current_process().name, record.processName)
+            record.processName = '{} (for {})'.format(current_process().name, record.processName)
             emit_once = getattr(record, "emit_once", False)
             if emit_once:
                 msg_to_check = record.getMessage()

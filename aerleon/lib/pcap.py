@@ -28,7 +28,6 @@ having more confidence in it.
 Stolen liberally from packetfilter.py.
 """
 
-
 import logging
 
 from aerleon.lib import aclgenerator
